@@ -1,0 +1,43 @@
+/* Slider Styles */
+input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 25px;
+    background: transparent;
+    outline: none;
+  }
+  
+  input[type="range"]::-webkit-slider-track {
+    width: 100%;
+    height: 6px;
+    cursor: pointer;
+    background: #1e3a5f;
+    border-radius: 3px;
+  }
+  
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    background: #64ffda;
+    cursor: pointer;
+    margin-top: -5px;
+  }
+  
+  input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    cursor: pointer;
+    background: #1e3a5f;
+    border-radius: 3px;
+  }
+  
+  input[type="range"]::-moz-range-thumb {
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    background: #64ffda;
+    cursor: pointer;
+    border: none;
+  }
