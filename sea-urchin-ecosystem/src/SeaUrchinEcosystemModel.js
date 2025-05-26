@@ -27,7 +27,6 @@ const SeaUrchinEcosystemModel = () => {
     reproductionRate: 0.05,
     grazingRate: 0.5,
     urchinSpeed: 0.5,
-    maturityTime: 100,
     spawnRadius: 50,
     
     // Harvester parameters
@@ -48,7 +47,9 @@ const SeaUrchinEcosystemModel = () => {
     // Simulation parameters
     tickRate: 100,  // milliseconds between ticks
     speedMultiplier: 1,  // number of simulation steps per tick
-    turboMode: false  // skip rendering for maximum speed
+    turboMode: false,  // skip rendering for maximum speed
+    tickLimit: 1000,  // simulation stops after this many ticks (0 = unlimited)
+    enableTickLimit: false  // whether to use tick limit
   });
 
   // Sprite styles state
@@ -91,9 +92,7 @@ const SeaUrchinEcosystemModel = () => {
   const agentsRef = useRef(null);
   const playingRef = useRef(false);
   const tickRef = useRef(0);
-  const statsAccumRef = useRef({
-    harvestedCount: 0
-  });
+  const statsAccumRef = useRef({ harvestedCount: 0 });
 
   // Sync refs with state
   useEffect(() => { 
@@ -244,20 +243,23 @@ const SeaUrchinEcosystemModel = () => {
   const initializeUrchins = useCallback(() => {
     const urchins = [];
     for (let i = 0; i < params.initialUrchins; i++) {
+      const maturityTime = Math.floor(Math.random() * (170 - 54 + 1)) + 54; // Random between 54-170
+      const age = Math.floor(Math.random() * 200); // Random initial age
       urchins.push({
         id: `urchin-${i}`,
         x: Math.random() * width,
         y: Math.random() * height,
         vx: (Math.random() - 0.5) * params.urchinSpeed,
         vy: (Math.random() - 0.5) * params.urchinSpeed,
-        age: Math.random() > 0.5 ? params.maturityTime + 1 : 0,
-        isAdult: Math.random() > 0.5,
+        age: age,
+        maturityTime: maturityTime,
+        isAdult: age >= maturityTime,
         energy: 50,
         lastSpawn: 0
       });
     }
     return urchins;
-  }, [params.initialUrchins, params.urchinSpeed, params.maturityTime, width, height]);
+  }, [params.initialUrchins, params.urchinSpeed, width, height]);
 
   // Initialize harvesters
   const initializeHarvesters = useCallback(() => {
@@ -284,14 +286,17 @@ const SeaUrchinEcosystemModel = () => {
         // Add new urchins
         const newUrchins = [];
         for (let i = currentCount; i < newCount; i++) {
+          const maturityTime = Math.floor(Math.random() * (170 - 54 + 1)) + 54; // Random between 54-170
+          const age = Math.floor(Math.random() * 200); // Random initial age
           newUrchins.push({
             id: `urchin-${Date.now()}-${i}`,
             x: Math.random() * width,
             y: Math.random() * height,
             vx: (Math.random() - 0.5) * params.urchinSpeed,
             vy: (Math.random() - 0.5) * params.urchinSpeed,
-            age: Math.random() > 0.5 ? params.maturityTime + 1 : 0,
-            isAdult: Math.random() > 0.5,
+            age: age,
+            maturityTime: maturityTime,
+            isAdult: age >= maturityTime,
             energy: 50,
             lastSpawn: 0
           });
@@ -311,7 +316,7 @@ const SeaUrchinEcosystemModel = () => {
       
       return prevAgents;
     });
-  }, [params.urchinSpeed, params.maturityTime, width, height]);
+  }, [params.urchinSpeed, width, height]);
 
   // Update harvesters when count changes
   const updateHarvesterCount = useCallback((newCount) => {
@@ -374,18 +379,17 @@ const SeaUrchinEcosystemModel = () => {
       algaeCoverage: 0,
       harvestedUrchins: 0
     });
-    statsAccumRef.current = {
-      harvestedCount: 0
-    };
+    statsAccumRef.current = { harvestedCount: 0 };
     setIsRunning(false);
+    playingRef.current = false;
   }, [initializeUrchins, initializeHarvesters, initializeCorals]);
 
   // Movement behavior
-  const moveAgent = (agent, speed, isHarvester = false) => {
+  const moveAgent = (agent, speed) => {
     // Random walk with momentum
     agent.vx += (Math.random() - 0.5) * speed * 0.1;
     agent.vy += (Math.random() - 0.5) * speed * 0.1;
-    
+
     // Speed limit
     const maxSpeed = speed * 2;
     const currentSpeed = Math.sqrt(agent.vx * agent.vx + agent.vy * agent.vy);
@@ -393,11 +397,11 @@ const SeaUrchinEcosystemModel = () => {
       agent.vx = (agent.vx / currentSpeed) * maxSpeed;
       agent.vy = (agent.vy / currentSpeed) * maxSpeed;
     }
-    
+
     // Update position
     agent.x += agent.vx;
     agent.y += agent.vy;
-    
+
     // Bounce off walls
     if (agent.x < 0 || agent.x > width) {
       agent.vx *= -1;
@@ -412,25 +416,21 @@ const SeaUrchinEcosystemModel = () => {
   // Sea urchin grazing behavior
   const grazeCorals = (urchin, corals) => {
     corals.forEach(coral => {
-      const distance = Math.sqrt(
-        Math.pow(urchin.x - coral.x, 2) + 
-        Math.pow(urchin.y - coral.y, 2)
-      );
-      
+      const dx = urchin.x - coral.x;
+      const dy = urchin.y - coral.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
       if (distance < cellSize && coral.status !== 'dead') {
-        // Graze coral
         coral.health -= params.grazingRate;
         urchin.energy += params.grazingRate * 0.5;
-        
-        // Update coral status
+
         if (coral.health <= 0) {
           coral.status = 'dead';
           coral.health = 0;
         } else if (coral.health < params.coralDegradationThreshold) {
           coral.status = 'degraded';
         }
-        
-        // Control algae growth
+
         coral.algaeLevel = Math.max(0, coral.algaeLevel - params.grazingRate * 0.3);
       }
     });
@@ -440,21 +440,18 @@ const SeaUrchinEcosystemModel = () => {
   const reproduceUrchins = (urchins, currentTick) => {
     const newUrchins = [];
     const adults = urchins.filter(u => u.isAdult);
-    
+
     adults.forEach(urchin => {
       if (urchin.energy > 60 && currentTick - urchin.lastSpawn > 50) {
-        // Check for nearby adults
         const nearbyAdults = adults.filter(other => {
           if (other.id === urchin.id) return false;
-          const distance = Math.sqrt(
-            Math.pow(urchin.x - other.x, 2) + 
-            Math.pow(urchin.y - other.y, 2)
-          );
-          return distance < params.spawnRadius;
+          const dx = urchin.x - other.x;
+          const dy = urchin.y - other.y;
+          return Math.sqrt(dx * dx + dy * dy) < params.spawnRadius;
         });
-        
+
         if (nearbyAdults.length > 0 && Math.random() < params.reproductionRate) {
-          // Spawn new urchin
+          const maturityTime = Math.floor(Math.random() * (170 - 54 + 1)) + 54; // Random between 54-170
           newUrchins.push({
             id: `urchin-${Date.now()}-${Math.random()}`,
             x: urchin.x + (Math.random() - 0.5) * 20,
@@ -462,17 +459,16 @@ const SeaUrchinEcosystemModel = () => {
             vx: (Math.random() - 0.5) * params.urchinSpeed,
             vy: (Math.random() - 0.5) * params.urchinSpeed,
             age: 0,
+            maturityTime: maturityTime,
             isAdult: false,
             energy: 30,
             lastSpawn: currentTick
           });
-          
           urchin.energy -= 20;
           urchin.lastSpawn = currentTick;
         }
       }
     });
-    
     return newUrchins;
   };
 
@@ -480,35 +476,30 @@ const SeaUrchinEcosystemModel = () => {
   const harvestUrchins = (harvesters, urchins) => {
     const remainingUrchins = [...urchins];
     let harvestedCount = 0;
-    
+
     harvesters.forEach(harvester => {
-      // Find nearby adult urchins
       const targets = remainingUrchins.filter(urchin => {
         if (!urchin.isAdult) return false;
-        const distance = Math.sqrt(
-          Math.pow(harvester.x - urchin.x, 2) + 
-          Math.pow(harvester.y - urchin.y, 2)
-        );
-        return distance < params.harvestRadius;
+        const dx = harvester.x - urchin.x;
+        const dy = harvester.y - urchin.y;
+        return Math.sqrt(dx * dx + dy * dy) < params.harvestRadius;
       });
-      
+
       if (targets.length > 0 && Math.random() < params.harvestingRate * 0.1) {
-        // Harvest closest urchin
         targets.sort((a, b) => {
-          const distA = Math.sqrt(Math.pow(harvester.x - a.x, 2) + Math.pow(harvester.y - a.y, 2));
-          const distB = Math.sqrt(Math.pow(harvester.x - b.x, 2) + Math.pow(harvester.y - b.y, 2));
-          return distA - distB;
+          const da = Math.hypot(harvester.x - a.x, harvester.y - a.y);
+          const db = Math.hypot(harvester.x - b.x, harvester.y - b.y);
+          return da - db;
         });
-        
-        const targetIndex = remainingUrchins.indexOf(targets[0]);
-        if (targetIndex !== -1) {
-          remainingUrchins.splice(targetIndex, 1);
+
+        const idx = remainingUrchins.indexOf(targets[0]);
+        if (idx !== -1) {
+          remainingUrchins.splice(idx, 1);
           harvester.harvestCount++;
           harvestedCount++;
         }
       }
     });
-    
     return { remainingUrchins, harvestedCount };
   };
 
@@ -516,21 +507,12 @@ const SeaUrchinEcosystemModel = () => {
   const updateCorals = (corals, urchinDensity) => {
     corals.forEach(coral => {
       if (coral.status !== 'dead') {
-        // Heal if low grazing pressure
         if (urchinDensity < 0.5) {
           coral.health = Math.min(100, coral.health + params.coralHealingRate);
-          
-          if (coral.health > params.coralDegradationThreshold) {
-            coral.status = 'healthy';
-          }
+          if (coral.health > params.coralDegradationThreshold) coral.status = 'healthy';
         }
-        
-        // Algae growth on degraded/dead corals
         if (coral.status === 'degraded' || coral.status === 'dead') {
-          coral.algaeLevel = Math.min(
-            params.maxAlgaeDensity, 
-            coral.algaeLevel + params.algaeGrowthRate
-          );
+          coral.algaeLevel = Math.min(params.maxAlgaeDensity, coral.algaeLevel + params.algaeGrowthRate);
         }
       }
     });
@@ -539,62 +521,63 @@ const SeaUrchinEcosystemModel = () => {
   // Optimized simulation step (no setState, pure mutation)
   const stepSimulation = useCallback(() => {
     if (!agentsRef.current) return;
-    
+
     const currentAgents = agentsRef.current;
     const currentTick = tickRef.current;
-    
+
     // Move and age sea urchins
-    currentAgents.seaUrchins.forEach(urchin => {
-      moveAgent(urchin, params.urchinSpeed);
-      urchin.age++;
-      if (urchin.age > params.maturityTime) {
-        urchin.isAdult = true;
-      }
-      urchin.energy = Math.max(0, urchin.energy - 0.1);
-      
-      // Graze corals
-      grazeCorals(urchin, currentAgents.corals);
+    currentAgents.seaUrchins.forEach(u => {
+      moveAgent(u, params.urchinSpeed);
+      u.age++;
+      if (u.age >= u.maturityTime) u.isAdult = true;
+      u.energy = Math.max(0, u.energy - 0.1);
+      grazeCorals(u, currentAgents.corals);
     });
-    
+
     // Remove starved urchins
     currentAgents.seaUrchins = currentAgents.seaUrchins.filter(u => u.energy > 0);
-    
+
     // Reproduction
-    const newUrchins = reproduceUrchins(currentAgents.seaUrchins, currentTick);
-    currentAgents.seaUrchins.push(...newUrchins);
-    
+    const newborns = reproduceUrchins(currentAgents.seaUrchins, currentTick);
+    currentAgents.seaUrchins.push(...newborns);
+
     // Move harvesters
-    currentAgents.harvesters.forEach(harvester => {
-      moveAgent(harvester, params.harvesterSpeed, true);
-    });
-    
+    currentAgents.harvesters.forEach(h => moveAgent(h, params.harvesterSpeed));
+
     // Harvesting
-    const { remainingUrchins, harvestedCount } = harvestUrchins(
-      currentAgents.harvesters, 
-      currentAgents.seaUrchins
-    );
+    const { remainingUrchins, harvestedCount } = harvestUrchins(currentAgents.harvesters, currentAgents.seaUrchins);
     currentAgents.seaUrchins = remainingUrchins;
     statsAccumRef.current.harvestedCount += harvestedCount;
-    
+
     // Update corals
-    const urchinDensity = currentAgents.seaUrchins.length / (gridWidth * gridHeight);
-    updateCorals(currentAgents.corals, urchinDensity);
-    
+    const density = currentAgents.seaUrchins.length / (gridWidth * gridHeight);
+    updateCorals(currentAgents.corals, density);
+
     // Increment tick
     tickRef.current++;
-    
+
+    // Check tick limit
+    if (params.enableTickLimit && params.tickLimit > 0 && tickRef.current >= params.tickLimit) {
+      setIsRunning(false);
+      playingRef.current = false;
+      
+      // Show completion message
+      if (tickRef.current === params.tickLimit) {
+        console.log(`Simulation completed! Reached tick limit of ${params.tickLimit}`);
+      }
+    }
+
     // Update state less frequently
     if (tickRef.current % 5 === 0) {
       setTick(tickRef.current);
-      
-      // Calculate statistics
+
       const juveniles = currentAgents.seaUrchins.filter(u => !u.isAdult).length;
       const adults = currentAgents.seaUrchins.filter(u => u.isAdult).length;
       const healthy = currentAgents.corals.filter(c => c.status === 'healthy').length;
       const degraded = currentAgents.corals.filter(c => c.status === 'degraded').length;
       const dead = currentAgents.corals.filter(c => c.status === 'dead').length;
       const avgAlgae = currentAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / currentAgents.corals.length;
-      
+
       setStats({
         juvenileUrchins: juveniles,
         adultUrchins: adults,
@@ -606,25 +589,27 @@ const SeaUrchinEcosystemModel = () => {
         harvestedUrchins: statsAccumRef.current.harvestedCount
       });
     }
-    
+
     // Update history even less frequently
     if (tickRef.current % 10 === 0 && tickRef.current > 0) {
-      const juveniles = currentAgents.seaUrchins.filter(u => !u.isAdult).length;
-      const adults = currentAgents.seaUrchins.filter(u => u.isAdult).length;
-      const totalUrchins = juveniles + adults;
-      const healthy = currentAgents.corals.filter(c => c.status === 'healthy').length;
-      const totalCorals = currentAgents.corals.length;
-      const coralHealthPercent = totalCorals > 0 ? (healthy / totalCorals) * 100 : 0;
-      const avgAlgae = currentAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / currentAgents.corals.length * 100;
-      
-      setHistory(prev => ({
-        ticks: [...prev.ticks, tickRef.current].slice(-100),
-        urchinPop: [...prev.urchinPop, totalUrchins].slice(-100),
-        coralHealth: [...prev.coralHealth, coralHealthPercent].slice(-100),
-        algaeCoverage: [...prev.algaeCoverage, avgAlgae].slice(-100)
-      }));
+      const shouldUpdateHistory = !params.turboMode || tickRef.current % 50 === 0;
+      if (shouldUpdateHistory) {
+        const juveniles = currentAgents.seaUrchins.filter(u => !u.isAdult).length;
+        const adults = currentAgents.seaUrchins.filter(u => u.isAdult).length;
+        const totalUrchins = juveniles + adults;
+        const healthy = currentAgents.corals.filter(c => c.status === 'healthy').length;
+        const totalCorals = currentAgents.corals.length;
+        const coralHealthPercent = totalCorals > 0 ? (healthy / totalCorals) * 100 : 0;
+        const avgAlgae = currentAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / currentAgents.corals.length * 100;
+
+        setHistory(prev => ({
+          ticks: [...prev.ticks, tickRef.current].slice(-100),
+          urchinPop: [...prev.urchinPop, totalUrchins].slice(-100),
+          coralHealth: [...prev.coralHealth, coralHealthPercent].slice(-100),
+          algaeCoverage: [...prev.algaeCoverage, avgAlgae].slice(-100)
+        }));
+      }
     }
-    
   }, [params, gridWidth, gridHeight]);
 
   // Helper function to render different sprite types
@@ -1016,55 +1001,33 @@ const SeaUrchinEcosystemModel = () => {
     let animationId;
     let lastStep = performance.now();
     let turboInterval;
-    
+
     function loop(now) {
       if (playingRef.current) {
-        // Step physics at tickRate
         if (now - lastStep > params.tickRate) {
-          // Run multiple simulation steps based on speed multiplier
-          for (let i = 0; i < params.speedMultiplier; i++) {
-            stepSimulation();
-          }
+          for (let i = 0; i < params.speedMultiplier; i++) stepSimulation();
           lastStep = now;
         }
-        
-        // Always render at browser frame rate unless in turbo mode
-        if (!params.turboMode) {
-          renderFrame();
-        }
+        if (!params.turboMode) renderFrame();
         animationId = requestAnimationFrame(loop);
       }
     }
-    
-    // Turbo mode - run simulation as fast as possible without rendering
+
     function turboLoop() {
       if (playingRef.current && params.turboMode) {
-        for (let i = 0; i < params.speedMultiplier * 10; i++) {
-          stepSimulation();
-        }
-        // Render occasionally to show progress
-        if (tickRef.current % 100 === 0) {
-          renderFrame();
-        }
+        for (let i = 0; i < params.speedMultiplier * 10; i++) stepSimulation();
+        if (tickRef.current % 100 === 0) renderFrame();
       }
     }
-    
+
     if (isRunning) {
-      if (params.turboMode) {
-        // Use setInterval for turbo mode to bypass RAF limitations
-        turboInterval = setInterval(turboLoop, 1);
-      } else {
-        animationId = requestAnimationFrame(loop);
-      }
+      if (params.turboMode) turboInterval = setInterval(turboLoop, 1);
+      else animationId = requestAnimationFrame(loop);
     }
-    
+
     return () => {
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
-      if (turboInterval) {
-        clearInterval(turboInterval);
-      }
+      if (animationId) cancelAnimationFrame(animationId);
+      if (turboInterval) clearInterval(turboInterval);
     };
   }, [isRunning, params.tickRate, params.speedMultiplier, params.turboMode, stepSimulation, renderFrame]);
 
@@ -1104,7 +1067,9 @@ const SeaUrchinEcosystemModel = () => {
         tickRate: params.tickRate,
         speedMultiplier: params.speedMultiplier,
         turboMode: params.turboMode,
-        effectiveSpeed: params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier
+        effectiveSpeed: params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier,
+        tickLimit: params.tickLimit,
+        tickLimitEnabled: params.enableTickLimit
       },
       timestamp: new Date().toISOString()
     };
@@ -1270,7 +1235,7 @@ const SeaUrchinEcosystemModel = () => {
           reproductionRate: params.reproductionRate,
           grazingRate: params.grazingRate,
           movementSpeed: params.urchinSpeed,
-          maturityTime: params.maturityTime,
+          maturityTime: '54-170 ticks (random)',
           spawnRadius: params.spawnRadius
         },
         harvesters: {
@@ -1291,7 +1256,9 @@ const SeaUrchinEcosystemModel = () => {
         simulation: {
           tickRate: params.tickRate,
           speedMultiplier: params.speedMultiplier,
-          turboMode: params.turboMode
+          turboMode: params.turboMode,
+          tickLimit: params.tickLimit,
+          tickLimitEnabled: params.enableTickLimit
         }
       },
       timeSeries: {
@@ -1342,7 +1309,7 @@ Sea Urchin Settings:
   • Reproduction Rate: ${(params.reproductionRate * 100).toFixed(0)}%
   • Grazing Rate: ${params.grazingRate}
   • Movement Speed: ${params.urchinSpeed}
-  • Maturity Time: ${params.maturityTime} ticks
+  • Maturity Time: 54-170 ticks (random per urchin)
 
 Harvester Settings:
   • Number of Harvesters: ${params.harvesterCount}
@@ -1359,6 +1326,7 @@ Simulation Speed:
   • Speed Multiplier: ${params.speedMultiplier}x
   • Turbo Mode: ${params.turboMode ? 'Enabled' : 'Disabled'}
   • Effective Speed: ${params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier}x
+  • Tick Limit: ${params.enableTickLimit ? params.tickLimit + ' ticks' : 'Disabled'}
 
 ANALYSIS SUMMARY
 ----------------
@@ -1448,7 +1416,7 @@ DATA POINTS: ${history.ticks.length}
     csv += `Reproduction Rate,${params.reproductionRate}\n`;
     csv += `Grazing Rate,${params.grazingRate}\n`;
     csv += `Urchin Speed,${params.urchinSpeed}\n`;
-    csv += `Maturity Time,${params.maturityTime}\n`;
+    csv += `Maturity Time,54-170 (random)\n`;
     csv += `Harvester Count,${params.harvesterCount}\n`;
     csv += `Harvesting Rate,${params.harvestingRate}\n`;
     csv += `Harvester Speed,${params.harvesterSpeed}\n`;
@@ -1457,7 +1425,9 @@ DATA POINTS: ${history.ticks.length}
     csv += `Algae Growth Rate,${params.algaeGrowthRate}\n`;
     csv += `Tick Rate,${params.tickRate}\n`;
     csv += `Speed Multiplier,${params.speedMultiplier}\n`;
-    csv += `Turbo Mode,${params.turboMode}\n\n`;
+    csv += `Turbo Mode,${params.turboMode}\n`;
+    csv += `Tick Limit Enabled,${params.enableTickLimit}\n`;
+    csv += `Tick Limit,${params.tickLimit}\n\n`;
     
     csv += 'TIME SERIES DATA\n';
     csv += 'Tick,Urchin Population,Coral Health %,Algae Coverage %\n';
@@ -1704,6 +1674,17 @@ DATA POINTS: ${history.ticks.length}
           </div>
         </div>
 
+        {/* Tick Limit Status Banner */}
+        {params.enableTickLimit && tick >= params.tickLimit && (
+          <div className={`mb-6 ${lowPerformanceMode ? 'bg-yellow-900/20' : 'bg-gradient-to-r from-yellow-500/10 to-orange-500/10 backdrop-blur-lg'} rounded-xl p-4 border border-yellow-500/30 text-center`}>
+            <p className="text-lg font-semibold text-yellow-400 flex items-center justify-center gap-2">
+              <RotateCcw className="w-5 h-5" />
+              Simulation Complete - Tick Limit Reached ({params.tickLimit} ticks)
+            </p>
+            <p className="text-sm text-yellow-300 mt-1">Click "Reset & Start Again" to run a new simulation</p>
+          </div>
+        )}
+
         {/* Preset Scenarios */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-3 justify-center">
@@ -1740,15 +1721,39 @@ DATA POINTS: ${history.ticks.length}
 
               <div className="space-y-3">
                 <button
-                  onClick={() => setIsRunning(!isRunning)}
+                  onClick={() => {
+                    if (params.enableTickLimit && tick >= params.tickLimit && !isRunning) {
+                      // If tick limit reached, reset and start
+                      initializeSimulation();
+                      setTimeout(() => setIsRunning(true), 100);
+                    } else {
+                      setIsRunning(!isRunning);
+                    }
+                  }}
                   className={`w-full py-3 px-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
                     isRunning 
                       ? `bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 ${!lowPerformanceMode && 'shadow-lg shadow-red-500/25'}`
+                      : params.enableTickLimit && tick >= params.tickLimit
+                      ? `bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 ${!lowPerformanceMode && 'shadow-lg shadow-green-500/25'}`
                       : `bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 ${!lowPerformanceMode && 'shadow-lg shadow-cyan-500/25'}`
                   }`}
                 >
-                  {isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                  {isRunning ? 'Pause Simulation' : 'Start Simulation'}
+                  {isRunning ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      Pause Simulation
+                    </>
+                  ) : params.enableTickLimit && tick >= params.tickLimit ? (
+                    <>
+                      <RotateCcw className="w-5 h-5" />
+                      Reset & Start Again
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      Start Simulation
+                    </>
+                  )}
                 </button>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -1935,6 +1940,14 @@ DATA POINTS: ${history.ticks.length}
                   <span className="text-gray-400">Simulation Time</span>
                   <span className="font-mono font-bold text-cyan-400">Tick {tick}</span>
                 </div>
+                {params.enableTickLimit && params.tickLimit > 0 && (
+                  <div className="flex items-center justify-between text-sm mt-2">
+                    <span className="text-gray-400">Progress</span>
+                    <span className="font-mono text-xs text-gray-400">
+                      {tick} / {params.tickLimit} ({((tick / params.tickLimit) * 100).toFixed(0)}%)
+                    </span>
+                  </div>
+                )}
                 {(params.speedMultiplier > 1 || params.turboMode) && (
                   <div className="flex items-center justify-between text-sm mt-2">
                     <span className="text-gray-400">Effective Speed</span>
@@ -1948,6 +1961,79 @@ DATA POINTS: ${history.ticks.length}
                         `${params.speedMultiplier}x`
                       )}
                     </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-sm text-gray-400">Enable Tick Limit</span>
+                  <input
+                    type="checkbox"
+                    checked={params.enableTickLimit}
+                    onChange={(e) => setParams({...params, enableTickLimit: e.target.checked})}
+                    className="w-4 h-4 text-cyan-600 bg-gray-700 border-gray-600 rounded focus:ring-cyan-500 focus:ring-2"
+                  />
+                </label>
+                {params.enableTickLimit && (
+                  <div className="mt-3">
+                    <CustomSlider
+                      label="Stop After"
+                      value={params.tickLimit}
+                      onChange={(e) => setParams({...params, tickLimit: parseInt(e.target.value)})}
+                      min={100}
+                      max={10000}
+                      step={100}
+                      unit=" ticks"
+                      color="purple"
+                    />
+                    <div className="grid grid-cols-4 gap-1 mt-2">
+                      <button
+                        onClick={() => setParams({...params, tickLimit: 500})}
+                        className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                          params.tickLimit === 500
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                        }`}
+                      >
+                        500
+                      </button>
+                      <button
+                        onClick={() => setParams({...params, tickLimit: 1000})}
+                        className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                          params.tickLimit === 1000
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                        }`}
+                      >
+                        1K
+                      </button>
+                      <button
+                        onClick={() => setParams({...params, tickLimit: 2500})}
+                        className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                          params.tickLimit === 2500
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                        }`}
+                      >
+                        2.5K
+                      </button>
+                      <button
+                        onClick={() => setParams({...params, tickLimit: 5000})}
+                        className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                          params.tickLimit === 5000
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                        }`}
+                      >
+                        5K
+                      </button>
+                    </div>
+                    {tick >= params.tickLimit && (
+                      <p className="text-xs text-yellow-400 mt-2 text-center">
+                        Simulation limit reached!
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -2025,16 +2111,6 @@ DATA POINTS: ${history.ticks.length}
                   max={2}
                   step={0.1}
                   unit=""
-                  color="cyan"
-                />
-                <CustomSlider
-                  label="Maturity Time"
-                  value={params.maturityTime}
-                  onChange={(e) => setParams({...params, maturityTime: parseInt(e.target.value)})}
-                  min={50}
-                  max={200}
-                  step={10}
-                  unit=" ticks"
                   color="cyan"
                 />
               </div>
@@ -2188,7 +2264,8 @@ DATA POINTS: ${history.ticks.length}
                   <div className="flex items-center gap-2 text-sm">
                     <Zap className={`w-4 h-4 ${params.turboMode ? 'text-yellow-400 animate-pulse' : 'text-yellow-400'}`} />
                     <span className={`font-mono ${params.turboMode ? 'text-yellow-400' : 'text-yellow-400'}`}>
-                      {isRunning ? (params.turboMode ? 'TURBO' : 'Running') : 'Paused'}
+                      {isRunning ? (params.turboMode ? 'TURBO' : 'Running') : 
+                       (params.enableTickLimit && tick >= params.tickLimit ? 'Complete' : 'Paused')}
                     </span>
                   </div>
                   {params.speedMultiplier > 1 && (
@@ -2197,6 +2274,27 @@ DATA POINTS: ${history.ticks.length}
                     </div>
                   )}
                 </div>
+                
+                {/* Progress bar when tick limit is enabled */}
+                {params.enableTickLimit && params.tickLimit > 0 && (
+                  <div className={`absolute bottom-4 left-4 right-4 ${lowPerformanceMode ? 'bg-slate-900/80' : 'bg-slate-900/80 backdrop-blur-lg'} rounded-lg p-2 border border-slate-700/50`}>
+                    <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                      <span>Progress</span>
+                      <span>{tick} / {params.tickLimit}</span>
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-cyan-500 to-cyan-600 transition-all duration-300 ease-out"
+                        style={{ width: `${Math.min((tick / params.tickLimit) * 100, 100)}%` }}
+                      />
+                    </div>
+                    {tick >= params.tickLimit && (
+                      <p className="text-xs text-yellow-400 mt-1 text-center">
+                        Simulation complete!
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -2329,6 +2427,21 @@ DATA POINTS: ${history.ticks.length}
                   </ul>
                 </div>
                 <div>
+                  <h4 className="font-semibold text-white mb-2">Tick Limit Feature:</h4>
+                  <p>
+                    Set a maximum number of simulation ticks to automatically stop the simulation after reaching a specific point. This is useful for:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 mt-2">
+                    <li>Running controlled experiments with consistent duration</li>
+                    <li>Preventing simulations from running indefinitely</li>
+                    <li>Comparing results across different parameter sets at the same time point</li>
+                    <li>Creating reproducible simulation runs</li>
+                  </ul>
+                  <p className="mt-2">
+                    Enable the tick limit in Simulation Control and set your desired maximum ticks (100-10,000).
+                  </p>
+                </div>
+                <div>
                   <h4 className="font-semibold text-white mb-2">Performance Mode:</h4>
                   <p>
                     Enable "Low Performance Mode" if you experience lag. This disables visual effects while maintaining full simulation functionality.
@@ -2347,6 +2460,14 @@ DATA POINTS: ${history.ticks.length}
       </div>
 
       <style jsx>{`
+        .chart-svg {
+          will-change: transform;
+        }
+
+        .line-container path {
+          vector-effect: non-scaling-stroke;
+        }
+
         @keyframes gradient {
           0%, 100% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
