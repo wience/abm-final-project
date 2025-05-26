@@ -1,0 +1,6 @@
+/node_modules
+./sea-urchin-ecosystem/node_modules
+./dist
+./build
+./test
+./docs

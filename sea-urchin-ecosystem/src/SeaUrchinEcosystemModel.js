@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
-import { debounce } from 'lodash';
+import { Play, Pause, RotateCcw, Download, Settings, Info, Zap, Fish, Heart, Waves } from 'lucide-react';
 
 const SeaUrchinEcosystemModel = () => {
   // Simulation dimensions
@@ -49,6 +49,15 @@ const SeaUrchinEcosystemModel = () => {
     tickRate: 100  // milliseconds between ticks
   });
 
+  // Sprite styles state
+  const [spriteStyle, setSpriteStyle] = useState('default');
+  const [customSprites, setCustomSprites] = useState({
+    urchin: null,
+    harvester: null,
+    coral: null,
+    algae: null
+  });
+
   // Statistics state
   const [stats, setStats] = useState({
     juvenileUrchins: 0,
@@ -69,7 +78,114 @@ const SeaUrchinEcosystemModel = () => {
     algaeCoverage: []
   });
 
+  // UI state
+  const [showInfo, setShowInfo] = useState(false);
+
   const svgRef = useRef(null);
+
+  // Preset configurations
+  const presets = {
+    balanced: {
+      name: 'Balanced Ecosystem',
+      icon: '⚖️',
+      params: {
+        initialUrchins: 30,
+        harvesterCount: 3,
+        initialCoralCoverage: 40,
+        grazingRate: 0.5,
+        harvestingRate: 1.0
+      }
+    },
+    overfishing: {
+      name: 'Overfishing Scenario',
+      icon: '🎣',
+      params: {
+        initialUrchins: 50,
+        harvesterCount: 8,
+        initialCoralCoverage: 40,
+        grazingRate: 0.5,
+        harvestingRate: 3.0
+      }
+    },
+    plague: {
+      name: 'Urchin Plague',
+      icon: '💀',
+      params: {
+        initialUrchins: 80,
+        harvesterCount: 1,
+        initialCoralCoverage: 40,
+        grazingRate: 1.5,
+        harvestingRate: 0.5
+      }
+    },
+    pristine: {
+      name: 'Pristine Reef',
+      icon: '🏝️',
+      params: {
+        initialUrchins: 15,
+        harvesterCount: 1,
+        initialCoralCoverage: 70,
+        grazingRate: 0.3,
+        harvestingRate: 0.5
+      }
+    }
+  };
+
+  // Sprite style definitions
+  const spriteStyles = {
+    default: {
+      name: 'Default',
+      urchin: { type: 'svg', style: 'spiky' },
+      harvester: { type: 'emoji', emoji: '🎣' },
+      coral: { type: 'svg', style: 'organic' },
+      algae: { type: 'svg', style: 'wavy' }
+    },
+    emoji: {
+      name: 'Emoji',
+      urchin: { type: 'emoji', emoji: '🦔' },
+      harvester: { type: 'emoji', emoji: '👨‍🌾' },
+      coral: { type: 'emoji', emoji: '🪸' },
+      algae: { type: 'emoji', emoji: '🌿' }
+    },
+    realistic: {
+      name: 'Realistic',
+      urchin: { type: 'svg', style: 'detailed' },
+      harvester: { type: 'emoji', emoji: '🤿' },
+      coral: { type: 'svg', style: 'branching' },
+      algae: { type: 'svg', style: 'seaweed' }
+    },
+    simple: {
+      name: 'Simple',
+      urchin: { type: 'svg', style: 'circle' },
+      harvester: { type: 'svg', style: 'triangle' },
+      coral: { type: 'svg', style: 'star' },
+      algae: { type: 'svg', style: 'blob' }
+    }
+  };
+
+  // Handle sprite image upload
+  const handleSpriteUpload = (entity, file) => {
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setCustomSprites(prev => ({
+          ...prev,
+          [entity]: e.target.result
+        }));
+        setSpriteStyle('custom');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Apply preset
+  const applyPreset = (preset) => {
+    setParams(prev => ({
+      ...prev,
+      ...preset.params
+    }));
+    initializeSimulation();
+  };
 
   // Initialize coral reef grid
   const initializeCorals = useCallback(() => {
@@ -110,7 +226,7 @@ const SeaUrchinEcosystemModel = () => {
       });
     }
     return urchins;
-  }, [params.initialUrchins, params.urchinSpeed, params.maturityTime]);
+  }, [params.initialUrchins, params.urchinSpeed, params.maturityTime, width, height]);
 
   // Initialize harvesters
   const initializeHarvesters = useCallback(() => {
@@ -126,7 +242,7 @@ const SeaUrchinEcosystemModel = () => {
       });
     }
     return harvesters;
-  }, [params.harvesterCount, params.harvesterSpeed]);
+  }, [params.harvesterCount, params.harvesterSpeed, width, height]);
 
   // Initialize simulation
   const initializeSimulation = useCallback(() => {
@@ -154,6 +270,7 @@ const SeaUrchinEcosystemModel = () => {
       algaeCoverage: 0,
       harvestedUrchins: 0
     });
+    setIsRunning(false);
   }, [initializeUrchins, initializeHarvesters, initializeCorals]);
 
   // Movement behavior
@@ -312,113 +429,78 @@ const SeaUrchinEcosystemModel = () => {
     });
   };
 
-  // Optimize simulation step
+  // Main simulation step
   const simulationStep = useCallback(() => {
     if (!isRunning) return;
     
     setAgents(prevAgents => {
-      try {
-        // Create new arrays only when needed
-        const newAgents = {
-          seaUrchins: prevAgents.seaUrchins,
-          harvesters: prevAgents.harvesters,
-          corals: prevAgents.corals,
-          algae: prevAgents.algae
-        };
+      const newAgents = {
+        seaUrchins: [...prevAgents.seaUrchins],
+        harvesters: [...prevAgents.harvesters],
+        corals: [...prevAgents.corals],
+        algae: [...prevAgents.algae]
+      };
+      
+      // Move and age sea urchins
+      newAgents.seaUrchins.forEach(urchin => {
+        moveAgent(urchin, params.urchinSpeed);
+        urchin.age++;
+        if (urchin.age > params.maturityTime) {
+          urchin.isAdult = true;
+        }
+        urchin.energy = Math.max(0, urchin.energy - 0.1);
         
-        // Batch updates for sea urchins
-        const updatedUrchins = newAgents.seaUrchins.map(urchin => {
-          const updatedUrchin = { ...urchin };
-          moveAgent(updatedUrchin, params.urchinSpeed);
-          updatedUrchin.age++;
-          if (updatedUrchin.age > params.maturityTime) {
-            updatedUrchin.isAdult = true;
-          }
-          updatedUrchin.energy = Math.max(0, updatedUrchin.energy - 0.1);
-          return updatedUrchin;
-        });
-        
-        // Filter starved urchins
-        newAgents.seaUrchins = updatedUrchins.filter(u => u.energy > 0);
-        
-        // Batch coral updates
-        const coralUpdates = newAgents.corals.map(coral => {
-          const updatedCoral = { ...coral };
-          if (updatedCoral.status !== 'dead') {
-            const urchinDensity = newAgents.seaUrchins.length / (gridWidth * gridHeight);
-            if (urchinDensity < 0.5) {
-              updatedCoral.health = Math.min(100, updatedCoral.health + params.coralHealingRate);
-              if (updatedCoral.health > params.coralDegradationThreshold) {
-                updatedCoral.status = 'healthy';
-              }
-            }
-            if (updatedCoral.status === 'degraded' || updatedCoral.status === 'dead') {
-              updatedCoral.algaeLevel = Math.min(
-                params.maxAlgaeDensity,
-                updatedCoral.algaeLevel + params.algaeGrowthRate
-              );
-            }
-          }
-          return updatedCoral;
-        });
-        
-        newAgents.corals = coralUpdates;
-        
-        // Batch harvester updates
-        const updatedHarvesters = newAgents.harvesters.map(harvester => {
-          const updatedHarvester = { ...harvester };
-          moveAgent(updatedHarvester, params.harvesterSpeed, true);
-          return updatedHarvester;
-        });
-        
-        newAgents.harvesters = updatedHarvesters;
-        
-        // Process harvesting in a single pass
-        const { remainingUrchins, harvestedCount } = harvestUrchins(
-          newAgents.harvesters,
-          newAgents.seaUrchins
-        );
-        newAgents.seaUrchins = remainingUrchins;
-        
-        // Update statistics in a single pass
-        const stats = {
-          juvenileUrchins: 0,
-          adultUrchins: 0,
-          healthyCorals: 0,
-          degradedCorals: 0,
-          deadCorals: 0,
-          algaeCoverage: 0
-        };
-        
-        newAgents.seaUrchins.forEach(urchin => {
-          if (urchin.isAdult) stats.adultUrchins++;
-          else stats.juvenileUrchins++;
-        });
-        
-        newAgents.corals.forEach(coral => {
-          if (coral.status === 'healthy') stats.healthyCorals++;
-          else if (coral.status === 'degraded') stats.degradedCorals++;
-          else if (coral.status === 'dead') stats.deadCorals++;
-          stats.algaeCoverage += coral.algaeLevel;
-        });
-        
-        stats.algaeCoverage = (stats.algaeCoverage / newAgents.corals.length) * 100;
-        
-        setStats(prevStats => ({
-          ...stats,
-          totalUrchins: stats.juvenileUrchins + stats.adultUrchins,
-          harvestedUrchins: prevStats.harvestedUrchins + harvestedCount
-        }));
-        
-        return newAgents;
-      } catch (error) {
-        console.error('Error in simulation step:', error);
-        return prevAgents;
-      }
+        // Graze corals
+        grazeCorals(urchin, newAgents.corals);
+      });
+      
+      // Remove starved urchins
+      newAgents.seaUrchins = newAgents.seaUrchins.filter(u => u.energy > 0);
+      
+      // Reproduction
+      const newUrchins = reproduceUrchins(newAgents.seaUrchins, tick);
+      newAgents.seaUrchins.push(...newUrchins);
+      
+      // Move harvesters
+      newAgents.harvesters.forEach(harvester => {
+        moveAgent(harvester, params.harvesterSpeed, true);
+      });
+      
+      // Harvesting
+      const { remainingUrchins, harvestedCount } = harvestUrchins(
+        newAgents.harvesters, 
+        newAgents.seaUrchins
+      );
+      newAgents.seaUrchins = remainingUrchins;
+      
+      // Update corals
+      const urchinDensity = newAgents.seaUrchins.length / (gridWidth * gridHeight);
+      updateCorals(newAgents.corals, urchinDensity);
+      
+      // Update statistics
+      const juveniles = newAgents.seaUrchins.filter(u => !u.isAdult).length;
+      const adults = newAgents.seaUrchins.filter(u => u.isAdult).length;
+      const healthy = newAgents.corals.filter(c => c.status === 'healthy').length;
+      const degraded = newAgents.corals.filter(c => c.status === 'degraded').length;
+      const dead = newAgents.corals.filter(c => c.status === 'dead').length;
+      const avgAlgae = newAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / newAgents.corals.length;
+      
+      setStats(prevStats => ({
+        juvenileUrchins: juveniles,
+        adultUrchins: adults,
+        totalUrchins: juveniles + adults,
+        healthyCorals: healthy,
+        degradedCorals: degraded,
+        deadCorals: dead,
+        algaeCoverage: avgAlgae * 100,
+        harvestedUrchins: prevStats.harvestedUrchins + harvestedCount
+      }));
+      
+      return newAgents;
     });
     
     setTick(prev => prev + 1);
-  }, [isRunning, params, gridWidth, gridHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isRunning, tick, params, gridWidth, gridHeight]);
 
   // Update history for charts
   useEffect(() => {
@@ -435,94 +517,116 @@ const SeaUrchinEcosystemModel = () => {
     }
   }, [tick, stats]);
 
-  // Optimize D3 visualization updates
-  const SimulationVisualization = React.memo(({ agents, width, height, cellSize }) => {
-    const svgRef = useRef(null);
-    const prevAgentsRef = useRef(agents);
+  // D3 visualization
+  useEffect(() => {
+    if (!svgRef.current) return;
     
-    useEffect(() => {
-      if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+    
+    // Background
+    svg.append('rect')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('fill', 'url(#ocean-gradient)');
+    
+    // Define gradients and patterns
+    const defs = svg.append('defs');
+    
+    const oceanGradient = defs.append('linearGradient')
+      .attr('id', 'ocean-gradient')
+      .attr('x1', '0%')
+      .attr('y1', '0%')
+      .attr('x2', '0%')
+      .attr('y2', '100%');
+    
+    oceanGradient.append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', '#001528');
+    
+    oceanGradient.append('stop')
+      .attr('offset', '50%')
+      .attr('stop-color', '#002951');
+    
+    oceanGradient.append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', '#003d7a');
+    
+    // Helper function to render different sprite types
+    const renderSprite = (selection, entity, data) => {
+      const currentStyle = spriteStyles[spriteStyle] || spriteStyles.default;
+      const sprite = currentStyle[entity];
       
-      // Only update if agents have actually changed
-      if (JSON.stringify(agents) === JSON.stringify(prevAgentsRef.current)) {
-        return;
-      }
-      
-      prevAgentsRef.current = agents;
-      
-      const svg = d3.select(svgRef.current);
-      
-      // Use D3's data join pattern for better performance
-      const updateVisualization = () => {
-        // Update corals
-        const coralSelection = svg.select('.coral-layer')
-          .selectAll('.coral')
-          .data(agents.corals, d => d.id);
+      if (spriteStyle === 'custom' && customSprites[entity]) {
+        // Render custom uploaded image
+        selection.each(function(d) {
+          const g = d3.select(this);
+          const size = entity === 'coral' ? cellSize * 1.6 : 
+                      entity === 'algae' ? cellSize * 1.2 :
+                      entity === 'harvester' ? 24 : 
+                      d.isAdult ? 20 : 12;
           
-        coralSelection.exit().remove();
+          g.append('image')
+            .attr('href', customSprites[entity])
+            .attr('x', -size/2)
+            .attr('y', -size/2)
+            .attr('width', size)
+            .attr('height', size);
+        });
+      } else if (sprite.type === 'emoji') {
+        // Render emoji
+        selection.each(function(d) {
+          const g = d3.select(this);
+          const size = entity === 'coral' ? '24px' : 
+                      entity === 'algae' ? '20px' :
+                      entity === 'harvester' ? '20px' : 
+                      d.isAdult ? '18px' : '12px';
+          
+          g.append('text')
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .style('font-size', size)
+            .style('user-select', 'none')
+            .text(sprite.emoji);
+        });
+      } else {
+        // Render SVG shapes based on style
+        switch(entity) {
+          case 'urchin':
+            renderUrchinSprite(selection, sprite.style, data);
+            break;
+          case 'harvester':
+            renderHarvesterSprite(selection, sprite.style);
+            break;
+          case 'coral':
+            renderCoralSprite(selection, sprite.style, data);
+            break;
+          case 'algae':
+            renderAlgaeSprite(selection, sprite.style, data);
+            break;
+        }
+      }
+    };
+    
+    // Sprite rendering functions
+    const renderUrchinSprite = (selection, style, urchins) => {
+      selection.each(function(d) {
+        const g = d3.select(this);
+        const radius = d.isAdult ? 10 : 6;
         
-        const coralEnter = coralSelection.enter()
-          .append('circle')
-          .attr('class', d => `coral ${d.status}`);
-        
-        coralSelection.merge(coralEnter)
-          .attr('cx', d => d.x)
-          .attr('cy', d => d.y)
-          .attr('r', cellSize * 0.8)
-          .attr('fill', d => {
-            if (d.status === 'healthy') return '#ff6b6b';
-            if (d.status === 'degraded') return '#966b6b';
-            return '#4a3333';
-          })
-          .attr('opacity', d => {
-            if (d.status === 'healthy') return 0.8;
-            if (d.status === 'degraded') return 0.6;
-            return 0.4;
-          });
-        
-        // Update algae
-        const algaeSelection = svg.select('.coral-layer')
-          .selectAll('.algae')
-          .data(agents.corals.filter(c => c.algaeLevel > 0.1), d => d.id);
-        
-        algaeSelection.exit().remove();
-        
-        const algaeEnter = algaeSelection.enter()
-          .append('circle')
-          .attr('class', 'algae');
-        
-        algaeSelection.merge(algaeEnter)
-          .attr('cx', d => d.x)
-          .attr('cy', d => d.y)
-          .attr('r', d => cellSize * 0.6 * d.algaeLevel)
-          .attr('fill', '#2ecc71')
-          .attr('opacity', 0.5);
-        
-        // Update sea urchins
-        const urchinSelection = svg.select('.urchin-layer')
-          .selectAll('.urchin-group')
-          .data(agents.seaUrchins, d => d.id);
-        
-        urchinSelection.exit().remove();
-        
-        const urchinEnter = urchinSelection.enter()
-          .append('g')
-          .attr('class', 'urchin-group');
-        
-        urchinEnter.append('circle')
-          .attr('class', d => `sea-urchin ${d.isAdult ? 'adult' : 'juvenile'}`)
-          .attr('r', d => d.isAdult ? 10 : 6)
-          .attr('fill', '#1a1a1a')
-          .attr('stroke', '#333')
-          .attr('stroke-width', 1);
-        
-        // Add spines to new urchins
-        urchinEnter.each(function(d) {
-          const group = d3.select(this);
-          for (let i = 0; i < 8; i++) {
-            const angle = (i / 8) * 2 * Math.PI;
+        if (style === 'spiky') {
+          // Default spiky urchin
+          g.append('circle')
+            .attr('r', radius)
+            .attr('fill', '#1a1a1a')
+            .attr('stroke', '#333')
+            .attr('stroke-width', 1);
+          
+          const spineCount = 8;
+          for (let i = 0; i < spineCount; i++) {
+            const angle = (i / spineCount) * 2 * Math.PI;
             const spineLength = d.isAdult ? 15 : 9;
-            group.append('line')
+            g.append('line')
               .attr('x1', 0)
               .attr('y1', 0)
               .attr('x2', Math.cos(angle) * spineLength)
@@ -530,189 +634,263 @@ const SeaUrchinEcosystemModel = () => {
               .attr('stroke', '#333')
               .attr('stroke-width', 1);
           }
-        });
-        
-        urchinSelection.merge(urchinEnter)
-          .attr('transform', d => `translate(${d.x}, ${d.y})`);
-        
-        // Update harvesters
-        const harvesterSelection = svg.select('.harvester-layer')
-          .selectAll('.harvester')
-          .data(agents.harvesters, d => d.id);
-        
-        harvesterSelection.exit().remove();
-        
-        const harvesterEnter = harvesterSelection.enter()
-          .append('g')
-          .attr('class', 'harvester');
-        
-        harvesterEnter.append('circle')
-          .attr('r', 12)
-          .attr('fill', '#e74c3c')
-          .attr('opacity', 0.8);
-        
-        harvesterEnter.append('text')
-          .attr('text-anchor', 'middle')
-          .attr('y', 4)
-          .attr('font-size', '16px')
-          .text('🎣');
-        
-        harvesterSelection.merge(harvesterEnter)
-          .attr('transform', d => `translate(${d.x}, ${d.y})`);
-      };
-      
-      // Initial setup
-      if (!svg.select('.coral-layer').size()) {
-        svg.append('rect')
-          .attr('width', width)
-          .attr('height', height)
-          .attr('fill', 'url(#ocean-gradient)');
+        } else if (style === 'detailed') {
+          // More detailed urchin
+          const gradient = defs.append('radialGradient')
+            .attr('id', `urchin-gradient-${d.id}`)
+            .attr('cx', '30%')
+            .attr('cy', '30%');
           
-        const defs = svg.append('defs');
-        const oceanGradient = defs.append('linearGradient')
-          .attr('id', 'ocean-gradient')
-          .attr('x1', '0%')
-          .attr('y1', '0%')
-          .attr('x2', '0%')
-          .attr('y2', '100%');
+          gradient.append('stop')
+            .attr('offset', '0%')
+            .attr('stop-color', '#4a4a4a');
           
-        oceanGradient.append('stop')
-          .attr('offset', '0%')
-          .attr('stop-color', '#0a192f');
+          gradient.append('stop')
+            .attr('offset', '100%')
+            .attr('stop-color', '#1a1a1a');
           
-        oceanGradient.append('stop')
-          .attr('offset', '50%')
-          .attr('stop-color', '#1e3a5f');
+          g.append('circle')
+            .attr('r', radius)
+            .attr('fill', `url(#urchin-gradient-${d.id})`);
           
-        oceanGradient.append('stop')
-          .attr('offset', '100%')
-          .attr('stop-color', '#2a4365');
-          
-        svg.append('g').attr('class', 'coral-layer');
-        svg.append('g').attr('class', 'urchin-layer');
-        svg.append('g').attr('class', 'harvester-layer');
-      }
-      
-      updateVisualization();
-    }, [agents, width, height, cellSize]);
-    
-    return (
-      <svg
-        ref={svgRef}
-        width={width}
-        height={height}
-        className="border border-slate-600 rounded"
-      />
-    );
-  });
-
-  SimulationVisualization.displayName = 'SimulationVisualization';
-
-  // Add frame rate limiting
-  const [lastFrameTime, setLastFrameTime] = useState(0);
-  const targetFPS = 30;
-  const frameInterval = 1000 / targetFPS;
-
-  // Optimize animation loop
-  useEffect(() => {
-    if (!isRunning) return;
-    
-    let animationFrameId;
-    let lastTime = performance.now();
-    
-    const animate = (currentTime) => {
-      const deltaTime = currentTime - lastTime;
-      
-      if (deltaTime >= frameInterval) {
-        simulationStep();
-        lastTime = currentTime;
-      }
-      
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    animationFrameId = requestAnimationFrame(animate);
-    
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [isRunning, simulationStep]);
-
-  // Add error boundary component
-  class ErrorBoundary extends React.Component {
-    constructor(props) {
-      super(props);
-      this.state = { hasError: false, error: null };
-    }
-
-    static getDerivedStateFromError(error) {
-      return { hasError: true, error };
-    }
-
-    componentDidCatch(error, errorInfo) {
-      console.error('Error in component:', error, errorInfo);
-    }
-
-    render() {
-      if (this.state.hasError) {
-        return (
-          <div className="p-4 bg-red-900 text-white rounded-lg">
-            <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
-            <p className="text-sm">{this.state.error?.message}</p>
-            <button
-              onClick={() => this.setState({ hasError: false, error: null })}
-              className="mt-4 px-4 py-2 bg-red-700 rounded hover:bg-red-600"
-            >
-              Try again
-            </button>
-          </div>
-        );
-      }
-
-      return this.props.children;
-    }
-  }
-
-  // Add loading state
-  const LoadingSpinner = () => (
-    <div className="flex items-center justify-center p-4">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
-    </div>
-  );
-
-  // Optimize parameter updates with a shorter debounce time and change detection
-  const debouncedSetParams = useCallback(
-    debounce((newParams) => {
-      setParams(prevParams => {
-        // Only update if values have actually changed
-        const hasChanges = Object.keys(newParams).some(
-          key => prevParams[key] !== newParams[key]
-        );
-        return hasChanges ? newParams : prevParams;
+          const spineCount = 16;
+          for (let i = 0; i < spineCount; i++) {
+            const angle = (i / spineCount) * 2 * Math.PI;
+            const spineLength = (d.isAdult ? 15 : 9) * (0.8 + Math.random() * 0.4);
+            g.append('line')
+              .attr('x1', Math.cos(angle) * radius * 0.8)
+              .attr('y1', Math.sin(angle) * radius * 0.8)
+              .attr('x2', Math.cos(angle) * spineLength)
+              .attr('y2', Math.sin(angle) * spineLength)
+              .attr('stroke', '#2a2a2a')
+              .attr('stroke-width', 1.5)
+              .attr('opacity', 0.8);
+          }
+        } else if (style === 'circle') {
+          // Simple circle
+          g.append('circle')
+            .attr('r', radius)
+            .attr('fill', d.isAdult ? '#2a2a2a' : '#4a4a4a')
+            .attr('stroke', '#666')
+            .attr('stroke-width', 2);
+        }
       });
-    }, 50), // Reduced from 300ms to 50ms
-    []
-  );
-
-  // Add loading state
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Update initialization
-  useEffect(() => {
-    const initialize = async () => {
-      setIsLoading(true);
-      try {
-        await initializeSimulation();
-      } catch (error) {
-        console.error('Error initializing simulation:', error);
-      } finally {
-        setIsLoading(false);
-      }
     };
     
-    initialize();
+    const renderHarvesterSprite = (selection, style) => {
+      selection.each(function(d) {
+        const g = d3.select(this);
+        
+        if (style === 'triangle') {
+          // Simple triangle
+          g.append('polygon')
+            .attr('points', '0,-12 -10,8 10,8')
+            .attr('fill', '#e74c3c')
+            .attr('stroke', '#c0392b')
+            .attr('stroke-width', 2);
+        } else {
+          // Default circle with emoji
+          g.append('circle')
+            .attr('r', 12)
+            .attr('fill', '#e74c3c')
+            .attr('opacity', 0.8);
+          g.append('text')
+            .attr('text-anchor', 'middle')
+            .attr('y', 4)
+            .attr('font-size', '16px')
+            .text('🎣');
+        }
+      });
+    };
+    
+    const renderCoralSprite = (selection, style, corals) => {
+      selection.each(function(d) {
+        const g = d3.select(this);
+        const baseColor = d.status === 'healthy' ? '#ff6b6b' : 
+                         d.status === 'degraded' ? '#966b6b' : '#4a3333';
+        const opacity = d.status === 'healthy' ? 0.8 : 
+                       d.status === 'degraded' ? 0.6 : 0.4;
+        
+        if (style === 'organic') {
+          // Default organic shape
+          const petals = 5;
+          for (let i = 0; i < petals; i++) {
+            const angle = (i / petals) * 2 * Math.PI;
+            const petalSize = cellSize * 0.4;
+            g.append('ellipse')
+              .attr('cx', Math.cos(angle) * petalSize/2)
+              .attr('cy', Math.sin(angle) * petalSize/2)
+              .attr('rx', petalSize)
+              .attr('ry', petalSize/2)
+              .attr('fill', baseColor)
+              .attr('opacity', opacity)
+              .attr('transform', `rotate(${angle * 180 / Math.PI} ${Math.cos(angle) * petalSize/2} ${Math.sin(angle) * petalSize/2})`);
+          }
+          g.append('circle')
+            .attr('r', cellSize * 0.3)
+            .attr('fill', baseColor)
+            .attr('opacity', opacity);
+        } else if (style === 'branching') {
+          // Branching coral
+          const branches = 6;
+          for (let i = 0; i < branches; i++) {
+            const angle = (i / branches) * 2 * Math.PI + (Math.random() - 0.5) * 0.5;
+            const length = cellSize * 0.6 * (0.7 + Math.random() * 0.3);
+            
+            g.append('line')
+              .attr('x1', 0)
+              .attr('y1', 0)
+              .attr('x2', Math.cos(angle) * length)
+              .attr('y2', Math.sin(angle) * length)
+              .attr('stroke', baseColor)
+              .attr('stroke-width', 4)
+              .attr('stroke-linecap', 'round')
+              .attr('opacity', opacity);
+            
+            g.append('circle')
+              .attr('cx', Math.cos(angle) * length)
+              .attr('cy', Math.sin(angle) * length)
+              .attr('r', 3)
+              .attr('fill', baseColor)
+              .attr('opacity', opacity);
+          }
+          g.append('circle')
+            .attr('r', 5)
+            .attr('fill', baseColor)
+            .attr('opacity', opacity);
+        } else if (style === 'star') {
+          // Star shape
+          const points = 8;
+          let pathData = '';
+          for (let i = 0; i < points * 2; i++) {
+            const angle = (i / (points * 2)) * 2 * Math.PI;
+            const radius = i % 2 === 0 ? cellSize * 0.8 : cellSize * 0.4;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            pathData += (i === 0 ? 'M' : 'L') + x + ',' + y;
+          }
+          pathData += 'Z';
+          
+          g.append('path')
+            .attr('d', pathData)
+            .attr('fill', baseColor)
+            .attr('opacity', opacity);
+        }
+      });
+    };
+    
+    const renderAlgaeSprite = (selection, style, corals) => {
+      selection.each(function(d) {
+        const g = d3.select(this);
+        const size = cellSize * 0.6 * d.algaeLevel;
+        
+        if (style === 'wavy') {
+          // Wavy algae
+          for (let j = 0; j < 3; j++) {
+            const offset = (j - 1) * 10;
+            const path = `M ${offset},0 Q ${offset + size/2},-${size/3} ${offset + size},0 T ${offset + size*1.5},${size/2}`;
+            g.append('path')
+              .attr('d', path)
+              .attr('fill', 'none')
+              .attr('stroke', '#2ecc71')
+              .attr('stroke-width', 2)
+              .attr('opacity', 0.6)
+              .attr('transform', `rotate(${j * 120} 0 0)`);
+          }
+        } else if (style === 'seaweed') {
+          // Seaweed style
+          for (let i = 0; i < 4; i++) {
+            const offsetX = (i - 1.5) * size/3;
+            const waveHeight = size * (0.5 + Math.random() * 0.5);
+            const path = `M ${offsetX},0 Q ${offsetX + size/4},-${waveHeight/2} ${offsetX},${-waveHeight}`;
+            
+            g.append('path')
+              .attr('d', path)
+              .attr('fill', 'none')
+              .attr('stroke', '#2ecc71')
+              .attr('stroke-width', 2)
+              .attr('opacity', 0.5)
+              .attr('transform', `rotate(${Math.random() * 30 - 15} 0 0)`);
+          }
+        } else if (style === 'blob') {
+          // Simple blob
+          g.append('circle')
+            .attr('r', size)
+            .attr('fill', '#2ecc71')
+            .attr('opacity', 0.5);
+        }
+      });
+    };
+    
+    // Add texture filter for corals
+    const filter = defs.append('filter')
+      .attr('id', 'coral-texture');
+    
+    filter.append('feTurbulence')
+      .attr('baseFrequency', '0.02')
+      .attr('numOctaves', '1')
+      .attr('result', 'turbulence');
+    
+    filter.append('feColorMatrix')
+      .attr('in', 'turbulence')
+      .attr('type', 'saturate')
+      .attr('values', '0');
+    
+    // Coral layer
+    const coralLayer = svg.append('g').attr('class', 'coral-layer');
+    
+    const coralGroups = coralLayer.selectAll('.coral-group')
+      .data(agents.corals)
+      .enter().append('g')
+      .attr('class', 'coral-group')
+      .attr('transform', d => `translate(${d.x}, ${d.y})`);
+    
+    renderSprite(coralGroups, 'coral', agents.corals);
+    
+    // Algae layer
+    const algaeGroups = coralLayer.selectAll('.algae-group')
+      .data(agents.corals.filter(c => c.algaeLevel > 0.1))
+      .enter().append('g')
+      .attr('class', 'algae-group')
+      .attr('transform', d => `translate(${d.x}, ${d.y})`);
+    
+    renderSprite(algaeGroups, 'algae', agents.corals.filter(c => c.algaeLevel > 0.1));
+    
+    // Sea urchin layer
+    const urchinLayer = svg.append('g').attr('class', 'urchin-layer');
+    
+    const urchinGroups = urchinLayer.selectAll('.urchin-group')
+      .data(agents.seaUrchins)
+      .enter().append('g')
+      .attr('class', 'urchin-group')
+      .attr('transform', d => `translate(${d.x}, ${d.y})`);
+    
+    renderSprite(urchinGroups, 'urchin', agents.seaUrchins);
+    
+    // Harvester layer
+    const harvesterLayer = svg.append('g').attr('class', 'harvester-layer');
+    
+    const harvesterGroups = harvesterLayer.selectAll('.harvester-group')
+      .data(agents.harvesters)
+      .enter().append('g')
+      .attr('class', 'harvester-group')
+      .attr('transform', d => `translate(${d.x}, ${d.y})`);
+    
+    renderSprite(harvesterGroups, 'harvester', agents.harvesters);
+    
+  }, [agents, spriteStyle, customSprites]);
+
+  // Animation loop
+  useEffect(() => {
+    if (isRunning) {
+      const interval = setInterval(simulationStep, params.tickRate);
+      return () => clearInterval(interval);
+    }
+  }, [isRunning, simulationStep, params.tickRate]);
+
+  // Initialize on mount
+  useEffect(() => {
+    initializeSimulation();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Export data function
@@ -721,6 +899,13 @@ const SeaUrchinEcosystemModel = () => {
       parameters: params,
       history: history,
       finalStats: stats,
+      spriteStyle: spriteStyle,
+      customSpriteUploaded: {
+        urchin: !!customSprites.urchin,
+        harvester: !!customSprites.harvester,
+        coral: !!customSprites.coral,
+        algae: !!customSprites.algae
+      },
       timestamp: new Date().toISOString()
     };
     
@@ -735,8 +920,8 @@ const SeaUrchinEcosystemModel = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Extract PopulationChart component
-  const PopulationChart = React.memo(({ history }) => {
+  // Chart component
+  const PopulationChart = () => {
     const chartRef = useRef(null);
     const svgInitialized = useRef(false);
     
@@ -744,7 +929,7 @@ const SeaUrchinEcosystemModel = () => {
       if (!chartRef.current || history.ticks.length === 0) return;
       
       const margin = { top: 20, right: 60, bottom: 50, left: 50 };
-      const chartWidth = 600 - margin.left - margin.right;
+      const chartWidth = 500 - margin.left - margin.right;
       const chartHeight = 200 - margin.top - margin.bottom;
       
       const svg = d3.select(chartRef.current);
@@ -764,9 +949,9 @@ const SeaUrchinEcosystemModel = () => {
         g.append('g').attr('class', 'y-axis2').attr('transform', `translate(${chartWidth},0)`);
         
         // Add line paths
-        g.append('path').attr('class', 'line-urchin').attr('fill', 'none').attr('stroke', '#64ffda').attr('stroke-width', 2);
-        g.append('path').attr('class', 'line-coral').attr('fill', 'none').attr('stroke', '#ff6b6b').attr('stroke-width', 2);
-        g.append('path').attr('class', 'line-algae').attr('fill', 'none').attr('stroke', '#2ecc71').attr('stroke-width', 2);
+        g.append('path').attr('class', 'line-urchin').attr('fill', 'none').attr('stroke', '#00ffcc').attr('stroke-width', 3);
+        g.append('path').attr('class', 'line-coral').attr('fill', 'none').attr('stroke', '#ff6b8a').attr('stroke-width', 3);
+        g.append('path').attr('class', 'line-algae').attr('fill', 'none').attr('stroke', '#00d474').attr('stroke-width', 3);
         
         // Add axis labels
         g.append('text')
@@ -775,26 +960,29 @@ const SeaUrchinEcosystemModel = () => {
           .attr('x', 0 - (chartHeight / 2))
           .attr('dy', '1em')
           .style('text-anchor', 'middle')
-          .style('fill', '#64ffda')
+          .style('fill', '#00ffcc')
           .style('font-size', '12px')
+          .style('font-weight', '600')
           .text('Urchin Population');
         
         g.append('text')
           .attr('transform', 'rotate(-90)')
-          .attr('y', chartWidth + 40)
+          .attr('y', chartWidth + 45)
           .attr('x', 0 - (chartHeight / 2))
           .attr('dy', '1em')
           .style('text-anchor', 'middle')
-          .style('fill', '#ff6b6b')
+          .style('fill', '#ff6b8a')
           .style('font-size', '12px')
+          .style('font-weight', '600')
           .text('Percentage (%)');
         
         g.append('text')
           .attr('y', chartHeight + 40)
           .attr('x', chartWidth / 2)
           .style('text-anchor', 'middle')
-          .style('fill', '#9ca3af')
+          .style('fill', '#94a3b8')
           .style('font-size', '12px')
+          .style('font-weight', '600')
           .text('Time (ticks)');
         
         svgInitialized.current = true;
@@ -817,28 +1005,31 @@ const SeaUrchinEcosystemModel = () => {
       
       // Update axes
       g.select('.x-axis').call(d3.axisBottom(xScale).ticks(5))
-        .selectAll('text').style('fill', '#9ca3af');
+        .selectAll('text').style('fill', '#94a3b8');
       g.select('.y-axis').call(d3.axisLeft(yScale).ticks(5))
-        .selectAll('text').style('fill', '#9ca3af');
+        .selectAll('text').style('fill', '#94a3b8');
       g.select('.y-axis2').call(d3.axisRight(yScale2).ticks(5))
-        .selectAll('text').style('fill', '#9ca3af');
+        .selectAll('text').style('fill', '#94a3b8');
       
       // Style axis lines
-      g.selectAll('.domain').style('stroke', '#4b5563');
-      g.selectAll('.tick line').style('stroke', '#4b5563');
+      g.selectAll('.domain').style('stroke', '#475569');
+      g.selectAll('.tick line').style('stroke', '#475569');
       
       // Update lines
       const urchinLine = d3.line()
         .x((d, i) => xScale(history.ticks[i]))
-        .y(d => yScale(d));
+        .y(d => yScale(d))
+        .curve(d3.curveMonotoneX);
       
       const coralLine = d3.line()
         .x((d, i) => xScale(history.ticks[i]))
-        .y(d => yScale2(d));
+        .y(d => yScale2(d))
+        .curve(d3.curveMonotoneX);
       
       const algaeLine = d3.line()
         .x((d, i) => xScale(history.ticks[i]))
-        .y(d => yScale2(d));
+        .y(d => yScale2(d))
+        .curve(d3.curveMonotoneX);
       
       g.select('.line-urchin').datum(history.urchinPop).attr('d', urchinLine);
       g.select('.line-coral').datum(history.coralHealth).attr('d', coralLine);
@@ -847,356 +1038,536 @@ const SeaUrchinEcosystemModel = () => {
     }, [history.ticks, history.urchinPop, history.coralHealth, history.algaeCoverage]);
     
     return <svg ref={chartRef}></svg>;
-  });
+  };
 
-  PopulationChart.displayName = 'PopulationChart';
-
-  // Control Panel Components
-  const SeaUrchinControls = React.memo(({ params, setParams }) => (
-    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-      <h3 className="text-lg font-semibold mb-4 text-cyan-400 flex items-center gap-2">
-        <span>🦔</span> Sea Urchin Parameters
-      </h3>
-      <div className="space-y-3">
-        <div>
-          <label className="text-sm text-gray-400">Initial Population</label>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            value={params.initialUrchins}
-            onChange={(e) => setParams({...params, initialUrchins: parseInt(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-cyan-400 font-mono">{params.initialUrchins}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Reproduction Rate</label>
-          <input
-            type="range"
-            min="0"
-            max="0.2"
-            step="0.01"
-            value={params.reproductionRate}
-            onChange={(e) => setParams({...params, reproductionRate: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-cyan-400 font-mono">{(params.reproductionRate * 100).toFixed(0)}%</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Grazing Rate</label>
-          <input
-            type="range"
-            min="0.1"
-            max="2"
-            step="0.1"
-            value={params.grazingRate}
-            onChange={(e) => setParams({...params, grazingRate: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-cyan-400 font-mono">{params.grazingRate.toFixed(1)}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Movement Speed</label>
-          <input
-            type="range"
-            min="0.1"
-            max="2"
-            step="0.1"
-            value={params.urchinSpeed}
-            onChange={(e) => setParams({...params, urchinSpeed: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-cyan-400 font-mono">{params.urchinSpeed.toFixed(1)}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Maturity Time (ticks)</label>
-          <input
-            type="range"
-            min="50"
-            max="200"
-            step="10"
-            value={params.maturityTime}
-            onChange={(e) => setParams({...params, maturityTime: parseInt(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-cyan-400 font-mono">{params.maturityTime}</div>
-        </div>
-      </div>
-    </div>
-  ));
-
-  SeaUrchinControls.displayName = 'SeaUrchinControls';
-
-  const HarvesterControls = React.memo(({ params, setParams }) => (
-    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-      <h3 className="text-lg font-semibold mb-4 text-orange-400 flex items-center gap-2">
-        <span>🎣</span> Harvester Parameters
-      </h3>
-      <div className="space-y-3">
-        <div>
-          <label className="text-sm text-gray-400">Number of Harvesters</label>
-          <input
-            type="range"
-            min="0"
-            max="10"
-            value={params.harvesterCount}
-            onChange={(e) => setParams({...params, harvesterCount: parseInt(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-orange-400 font-mono">{params.harvesterCount}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Harvesting Rate</label>
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="0.1"
-            value={params.harvestingRate}
-            onChange={(e) => setParams({...params, harvestingRate: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-orange-400 font-mono">{params.harvestingRate.toFixed(1)}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Harvester Speed</label>
-          <input
-            type="range"
-            min="0.5"
-            max="3"
-            step="0.1"
-            value={params.harvesterSpeed}
-            onChange={(e) => setParams({...params, harvesterSpeed: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-orange-400 font-mono">{params.harvesterSpeed.toFixed(1)}</div>
-        </div>
-      </div>
-    </div>
-  ));
-
-  HarvesterControls.displayName = 'HarvesterControls';
-
-  const CoralControls = React.memo(({ params, setParams }) => (
-    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-      <h3 className="text-lg font-semibold mb-4 text-pink-400 flex items-center gap-2">
-        <span>🪸</span> Coral Parameters
-      </h3>
-      <div className="space-y-3">
-        <div>
-          <label className="text-sm text-gray-400">Initial Coverage (%)</label>
-          <input
-            type="range"
-            min="10"
-            max="80"
-            value={params.initialCoralCoverage}
-            onChange={(e) => setParams({...params, initialCoralCoverage: parseInt(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-pink-400 font-mono">{params.initialCoralCoverage}%</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Healing Rate</label>
-          <input
-            type="range"
-            min="0"
-            max="0.1"
-            step="0.01"
-            value={params.coralHealingRate}
-            onChange={(e) => setParams({...params, coralHealingRate: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-pink-400 font-mono">{params.coralHealingRate.toFixed(2)}</div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-400">Algae Growth Rate</label>
-          <input
-            type="range"
-            min="0"
-            max="0.1"
-            step="0.01"
-            value={params.algaeGrowthRate}
-            onChange={(e) => setParams({...params, algaeGrowthRate: parseFloat(e.target.value)})}
-            className="w-full"
-          />
-          <div className="text-right text-green-400 font-mono">{params.algaeGrowthRate.toFixed(2)}</div>
-        </div>
-      </div>
-    </div>
-  ));
-
-  CoralControls.displayName = 'CoralControls';
-
-  const SimulationControls = React.memo(({ params, setParams, isRunning, setIsRunning, initializeSimulation, exportData }) => (
-    <>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h3 className="text-lg font-semibold mb-4 text-purple-400 flex items-center gap-2">
-          <span>⚙️</span> Simulation Settings
-        </h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm text-gray-400">Simulation Speed (ms/tick)</label>
-            <input
-              type="range"
-              min="10"
-              max="500"
-              step="10"
-              value={params.tickRate}
-              onChange={(e) => setParams({...params, tickRate: parseInt(e.target.value)})}
-              className="w-full"
-            />
-            <div className="text-right text-purple-400 font-mono">{params.tickRate}ms</div>
-            <div className="text-xs text-gray-500 mt-1">Lower = Faster</div>
-          </div>
-        </div>
-      </div>
-      
+  // Custom slider component
+  const CustomSlider = ({ label, value, onChange, min, max, step, unit, color = 'cyan' }) => {
+    const percentage = ((value - min) / (max - min)) * 100;
+    const colorMap = {
+      cyan: '#00ffcc',
+      orange: '#ff7f50',
+      pink: '#ff6b8a',
+      green: '#00d474',
+      purple: '#a855f7'
+    };
+    
+    return (
       <div className="space-y-2">
-        <button
-          onClick={() => setIsRunning(!isRunning)}
-          className={`w-full py-3 px-4 rounded-lg font-semibold transition-all ${
-            isRunning 
-              ? 'bg-red-600 hover:bg-red-700' 
-              : 'bg-cyan-600 hover:bg-cyan-700'
-          }`}
-        >
-          {isRunning ? 'Pause Simulation' : 'Start Simulation'}
-        </button>
-        <button
-          onClick={initializeSimulation}
-          className="w-full py-3 px-4 rounded-lg font-semibold bg-slate-700 hover:bg-slate-600 transition-all"
-        >
-          Reset Simulation
-        </button>
-        <button
-          onClick={exportData}
-          className="w-full py-3 px-4 rounded-lg font-semibold bg-green-600 hover:bg-green-700 transition-all"
-        >
-          Export Data
-        </button>
-      </div>
-    </>
-  ));
-
-  SimulationControls.displayName = 'SimulationControls';
-
-  const StatisticsDisplay = React.memo(({ stats }) => (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Juvenile Urchins</h4>
-        <div className="text-2xl font-bold text-cyan-400">{stats.juvenileUrchins}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Adult Urchins</h4>
-        <div className="text-2xl font-bold text-cyan-400">{stats.adultUrchins}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Healthy Corals</h4>
-        <div className="text-2xl font-bold text-pink-400">{stats.healthyCorals}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Harvested</h4>
-        <div className="text-2xl font-bold text-orange-400">{stats.harvestedUrchins}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Degraded Corals</h4>
-        <div className="text-2xl font-bold text-yellow-400">{stats.degradedCorals}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Dead Corals</h4>
-        <div className="text-2xl font-bold text-red-400">{stats.deadCorals}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Algae Coverage</h4>
-        <div className="text-2xl font-bold text-green-400">{stats.algaeCoverage.toFixed(1)}%</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Total Urchins</h4>
-        <div className="text-2xl font-bold text-cyan-400">{stats.totalUrchins}</div>
-      </div>
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h4 className="text-sm text-gray-400 mb-1">Coral Health %</h4>
-        <div className="text-2xl font-bold text-pink-400">
-          {(stats.healthyCorals + stats.degradedCorals + stats.deadCorals) > 0 
-            ? ((stats.healthyCorals / (stats.healthyCorals + stats.degradedCorals + stats.deadCorals)) * 100).toFixed(1)
-            : '0.0'}%
+        <div className="flex justify-between items-center">
+          <label className="text-sm font-medium text-gray-300">{label}</label>
+          <span className={`text-sm font-mono font-bold`} style={{ color: colorMap[color] }}>
+            {typeof value === 'number' && value < 1 && value > 0 ? `${(value * 100).toFixed(0)}%` : `${value}${unit || ''}`}
+          </span>
+        </div>
+        <div className="relative">
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step || 1}
+            value={value}
+            onChange={onChange}
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+            style={{
+              background: `linear-gradient(to right, ${colorMap[color]} 0%, ${colorMap[color]} ${percentage}%, #374151 ${percentage}%, #374151 100%)`
+            }}
+          />
         </div>
       </div>
-    </div>
-  ));
-
-  StatisticsDisplay.displayName = 'StatisticsDisplay';
+    );
+  };
 
   return (
-    <ErrorBoundary>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">
-            Sea Urchin-Coral Reef Ecosystem Model
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 text-white">
+      {/* Animated background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-cyan-500/5 to-teal-500/5"></div>
+        <div className="absolute top-0 left-0 w-96 h-96 bg-cyan-500/10 rounded-full filter blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full filter blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-bold mb-3 bg-gradient-to-r from-cyan-400 via-blue-400 to-teal-400 bg-clip-text text-transparent animate-gradient">
+            Sea Urchin-Coral Reef Ecosystem
           </h1>
-          <p className="text-center text-gray-400 mb-8">Agent-Based Model for Mactan, Cebu</p>
-          
-          {isLoading ? (
-            <LoadingSpinner />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Control Panel */}
-              <div className="lg:col-span-1 space-y-6">
-                <SeaUrchinControls params={params} setParams={debouncedSetParams} />
-                <HarvesterControls params={params} setParams={debouncedSetParams} />
-                <CoralControls params={params} setParams={debouncedSetParams} />
-                <SimulationControls 
-                  params={params} 
-                  setParams={debouncedSetParams} 
-                  isRunning={isRunning} 
-                  setIsRunning={setIsRunning}
-                  initializeSimulation={initializeSimulation}
-                  exportData={exportData}
+          <p className="text-lg text-gray-400 flex items-center justify-center gap-2">
+            <Waves className="w-5 h-5" />
+            Agent-Based Model for Mactan, Cebu Marine Conservation
+          </p>
+        </div>
+
+        {/* Quick Stats Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/10 backdrop-blur-lg rounded-2xl p-4 border border-cyan-500/20 transform hover:scale-105 transition-all">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-cyan-300 font-medium">Total Urchins</p>
+                <p className="text-2xl font-bold text-cyan-400">{stats.totalUrchins}</p>
+              </div>
+              <div className="text-3xl">🦔</div>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-pink-500/10 to-pink-600/10 backdrop-blur-lg rounded-2xl p-4 border border-pink-500/20 transform hover:scale-105 transition-all">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-pink-300 font-medium">Coral Health</p>
+                <p className="text-2xl font-bold text-pink-400">
+                  {(stats.healthyCorals + stats.degradedCorals + stats.deadCorals) > 0 
+                    ? ((stats.healthyCorals / (stats.healthyCorals + stats.degradedCorals + stats.deadCorals)) * 100).toFixed(0)
+                    : '0'}%
+                </p>
+              </div>
+              <div className="text-3xl">🪸</div>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 backdrop-blur-lg rounded-2xl p-4 border border-green-500/20 transform hover:scale-105 transition-all">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-green-300 font-medium">Algae Coverage</p>
+                <p className="text-2xl font-bold text-green-400">{stats.algaeCoverage.toFixed(0)}%</p>
+              </div>
+              <div className="text-3xl">🌿</div>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/10 backdrop-blur-lg rounded-2xl p-4 border border-orange-500/20 transform hover:scale-105 transition-all">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-orange-300 font-medium">Harvested</p>
+                <p className="text-2xl font-bold text-orange-400">{stats.harvestedUrchins}</p>
+              </div>
+              <div className="text-3xl">🎣</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Preset Scenarios */}
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-3 justify-center">
+            {Object.entries(presets).map(([key, preset]) => (
+              <button
+                key={key}
+                onClick={() => applyPreset(preset)}
+                className="px-4 py-2 bg-gradient-to-r from-slate-700/50 to-slate-600/50 backdrop-blur-lg rounded-full border border-slate-500/30 hover:from-slate-600/50 hover:to-slate-500/50 transition-all flex items-center gap-2 group"
+              >
+                <span className="text-lg group-hover:scale-125 transition-transform">{preset.icon}</span>
+                <span className="text-sm font-medium">{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Control Panel */}
+          <div className="lg:col-span-1 space-y-4">
+            {/* Simulation Controls */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-purple-400" />
+                  Simulation Control
+                </h3>
+                <button
+                  onClick={() => setShowInfo(!showInfo)}
+                  className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 transition-colors"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => setIsRunning(!isRunning)}
+                  className={`w-full py-3 px-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
+                    isRunning 
+                      ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-500/25' 
+                      : 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 shadow-lg shadow-cyan-500/25'
+                  }`}
+                >
+                  {isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                  {isRunning ? 'Pause Simulation' : 'Start Simulation'}
+                </button>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={initializeSimulation}
+                    className="py-2 px-3 rounded-xl font-medium bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 transition-all flex items-center justify-center gap-1 text-sm"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reset
+                  </button>
+                  <button
+                    onClick={exportData}
+                    className="py-2 px-3 rounded-xl font-medium bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 transition-all flex items-center justify-center gap-1 text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-slate-700/50">
+                <CustomSlider
+                  label="Simulation Speed"
+                  value={params.tickRate}
+                  onChange={(e) => setParams({...params, tickRate: parseInt(e.target.value)})}
+                  min={1}
+                  max={500}
+                  step={10}
+                  unit="ms"
+                  color="purple"
+                />
+                <p className="text-xs text-gray-500 mt-2 text-center">Lower = Faster</p>
+              </div>
+
+              <div className="mt-4 p-3 bg-slate-900/50 rounded-xl">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400">Simulation Time</span>
+                  <span className="font-mono font-bold text-cyan-400">Tick {tick}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sea Urchin Parameters */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-lg font-bold mb-4 text-cyan-400 flex items-center gap-2">
+                <span>🦔</span> Sea Urchin Parameters
+              </h3>
+              <div className="space-y-4">
+                <CustomSlider
+                  label="Initial Population"
+                  value={params.initialUrchins}
+                  onChange={(e) => setParams({...params, initialUrchins: parseInt(e.target.value)})}
+                  min={10}
+                  max={100}
+                  unit=""
+                  color="cyan"
+                />
+                <CustomSlider
+                  label="Reproduction Rate"
+                  value={params.reproductionRate}
+                  onChange={(e) => setParams({...params, reproductionRate: parseFloat(e.target.value)})}
+                  min={0}
+                  max={0.2}
+                  step={0.01}
+                  unit=""
+                  color="cyan"
+                />
+                <CustomSlider
+                  label="Grazing Rate"
+                  value={params.grazingRate}
+                  onChange={(e) => setParams({...params, grazingRate: parseFloat(e.target.value)})}
+                  min={0.1}
+                  max={2}
+                  step={0.1}
+                  unit=""
+                  color="cyan"
+                />
+                <CustomSlider
+                  label="Movement Speed"
+                  value={params.urchinSpeed}
+                  onChange={(e) => setParams({...params, urchinSpeed: parseFloat(e.target.value)})}
+                  min={0.1}
+                  max={2}
+                  step={0.1}
+                  unit=""
+                  color="cyan"
+                />
+                <CustomSlider
+                  label="Maturity Time"
+                  value={params.maturityTime}
+                  onChange={(e) => setParams({...params, maturityTime: parseInt(e.target.value)})}
+                  min={50}
+                  max={200}
+                  step={10}
+                  unit=" ticks"
+                  color="cyan"
                 />
               </div>
-              
-              {/* Visualization Area */}
-              <div className="lg:col-span-3 space-y-6">
-                {/* Main Simulation */}
-                <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-                  <h3 className="text-lg font-semibold mb-4">Ecosystem Simulation (Tick: {tick})</h3>
-                  <SimulationVisualization 
-                    agents={agents}
-                    width={width}
-                    height={height}
-                    cellSize={cellSize}
-                  />
+            </div>
+
+            {/* Harvester Parameters */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-lg font-bold mb-4 text-orange-400 flex items-center gap-2">
+                <span>🎣</span> Harvester Parameters
+              </h3>
+              <div className="space-y-4">
+                <CustomSlider
+                  label="Number of Harvesters"
+                  value={params.harvesterCount}
+                  onChange={(e) => setParams({...params, harvesterCount: parseInt(e.target.value)})}
+                  min={0}
+                  max={10}
+                  unit=""
+                  color="orange"
+                />
+                <CustomSlider
+                  label="Harvesting Rate"
+                  value={params.harvestingRate}
+                  onChange={(e) => setParams({...params, harvestingRate: parseFloat(e.target.value)})}
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  unit=""
+                  color="orange"
+                />
+                <CustomSlider
+                  label="Harvester Speed"
+                  value={params.harvesterSpeed}
+                  onChange={(e) => setParams({...params, harvesterSpeed: parseFloat(e.target.value)})}
+                  min={0.5}
+                  max={3}
+                  step={0.1}
+                  unit=""
+                  color="orange"
+                />
+              </div>
+            </div>
+
+            {/* Coral Parameters */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-lg font-bold mb-4 text-pink-400 flex items-center gap-2">
+                <span>🪸</span> Coral & Algae Parameters
+              </h3>
+              <div className="space-y-4">
+                <CustomSlider
+                  label="Initial Coverage"
+                  value={params.initialCoralCoverage}
+                  onChange={(e) => setParams({...params, initialCoralCoverage: parseInt(e.target.value)})}
+                  min={10}
+                  max={80}
+                  unit="%"
+                  color="pink"
+                />
+                <CustomSlider
+                  label="Healing Rate"
+                  value={params.coralHealingRate}
+                  onChange={(e) => setParams({...params, coralHealingRate: parseFloat(e.target.value)})}
+                  min={0}
+                  max={0.1}
+                  step={0.01}
+                  unit=""
+                  color="pink"
+                />
+                <CustomSlider
+                  label="Algae Growth Rate"
+                  value={params.algaeGrowthRate}
+                  onChange={(e) => setParams({...params, algaeGrowthRate: parseFloat(e.target.value)})}
+                  min={0}
+                  max={0.1}
+                  step={0.01}
+                  unit=""
+                  color="green"
+                />
+              </div>
+            </div>
+
+            {/* Visual Settings */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-lg font-bold mb-4 text-yellow-400 flex items-center gap-2">
+                <span>🎨</span> Visual Settings
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-300 mb-2 block">Sprite Style</label>
+                  <select
+                    value={spriteStyle}
+                    onChange={(e) => setSpriteStyle(e.target.value)}
+                    className="w-full p-3 bg-slate-800/50 border border-slate-600/50 rounded-xl text-white focus:border-yellow-400/50 focus:outline-none transition-colors"
+                  >
+                    <option value="default">Default</option>
+                    <option value="emoji">Emoji</option>
+                    <option value="realistic">Realistic</option>
+                    <option value="simple">Simple</option>
+                    <option value="custom">Custom</option>
+                  </select>
                 </div>
                 
-                {/* Statistics */}
-                <StatisticsDisplay stats={stats} />
-                
-                {/* Population Chart */}
-                <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-                  <h3 className="text-lg font-semibold mb-4">Population Dynamics</h3>
-                  <PopulationChart history={history} />
-                  <div className="flex gap-6 mt-4 justify-center">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-cyan-400 rounded"></div>
-                      <span className="text-sm">Sea Urchins</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-pink-400 rounded"></div>
-                      <span className="text-sm">Coral Health %</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-green-400 rounded"></div>
-                      <span className="text-sm">Algae Coverage %</span>
-                    </div>
+                {spriteStyle === 'custom' && (
+                  <div className="space-y-3 pt-3 border-t border-slate-700/50">
+                    <p className="text-xs text-gray-400">Upload custom sprites (PNG/JPG):</p>
+                    {['urchin', 'harvester', 'coral', 'algae'].map(entity => (
+                      <div key={entity} className="flex items-center justify-between">
+                        <label className="text-xs text-gray-400 capitalize">{entity}:</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleSpriteUpload(entity, e.target.files[0])}
+                          className="text-xs w-32 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-yellow-500/20 file:text-yellow-400 hover:file:bg-yellow-500/30"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Visualization Area */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Main Simulation */}
+            <div className="bg-gradient-to-br from-slate-800/30 to-slate-900/30 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Waves className="w-5 h-5 text-blue-400" />
+                Ecosystem Simulation
+              </h3>
+              <div className="relative overflow-hidden rounded-xl">
+                <svg
+                  ref={svgRef}
+                  width={width}
+                  height={height}
+                  className="w-full h-auto"
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  viewBox={`0 0 ${width} ${height}`}
+                />
+                {/* Overlay stats */}
+                <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-lg rounded-xl p-3 border border-slate-700/50">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Zap className="w-4 h-4 text-yellow-400" />
+                    <span className="font-mono text-yellow-400">{isRunning ? 'Running' : 'Paused'}</span>
                   </div>
                 </div>
               </div>
             </div>
-          )}
+            
+            {/* Detailed Statistics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/10 backdrop-blur-lg rounded-xl p-4 border border-cyan-500/20">
+                <h4 className="text-xs text-cyan-300 font-medium mb-1">Juvenile Urchins</h4>
+                <div className="text-2xl font-bold text-cyan-400">{stats.juvenileUrchins}</div>
+              </div>
+              <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/10 backdrop-blur-lg rounded-xl p-4 border border-cyan-500/20">
+                <h4 className="text-xs text-cyan-300 font-medium mb-1">Adult Urchins</h4>
+                <div className="text-2xl font-bold text-cyan-400">{stats.adultUrchins}</div>
+              </div>
+              <div className="bg-gradient-to-br from-pink-500/10 to-pink-600/10 backdrop-blur-lg rounded-xl p-4 border border-pink-500/20">
+                <h4 className="text-xs text-pink-300 font-medium mb-1">Healthy Corals</h4>
+                <div className="text-2xl font-bold text-pink-400">{stats.healthyCorals}</div>
+              </div>
+              <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/10 backdrop-blur-lg rounded-xl p-4 border border-yellow-500/20">
+                <h4 className="text-xs text-yellow-300 font-medium mb-1">Degraded Corals</h4>
+                <div className="text-2xl font-bold text-yellow-400">{stats.degradedCorals}</div>
+              </div>
+            </div>
+            
+            {/* Population Chart */}
+            <div className="bg-gradient-to-br from-slate-800/30 to-slate-900/30 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Heart className="w-5 h-5 text-red-400" />
+                Population Dynamics
+              </h3>
+              <div className="flex justify-center">
+                <PopulationChart />
+              </div>
+              <div className="flex gap-6 mt-6 justify-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-r from-cyan-400 to-cyan-600 rounded"></div>
+                  <span className="text-sm text-gray-300">Sea Urchins</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-r from-pink-400 to-pink-600 rounded"></div>
+                  <span className="text-sm text-gray-300">Coral Health %</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gradient-to-r from-green-400 to-green-600 rounded"></div>
+                  <span className="text-sm text-gray-300">Algae Coverage %</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Info Modal */}
+        {showInfo && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 max-w-2xl max-h-[80vh] overflow-y-auto border border-slate-700/50 shadow-2xl">
+              <h3 className="text-2xl font-bold mb-4 text-cyan-400">About This Simulation</h3>
+              <div className="space-y-4 text-gray-300">
+                <p>
+                  This agent-based model simulates the complex interactions between sea urchins, coral reefs, and human harvesting activities in the marine ecosystem of Mactan, Cebu.
+                </p>
+                <div>
+                  <h4 className="font-semibold text-white mb-2">Key Components:</h4>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><span className="text-cyan-400">Sea Urchins:</span> Graze on corals and algae, reproduce when conditions are favorable</li>
+                    <li><span className="text-pink-400">Coral Reefs:</span> Provide habitat, can heal when grazing pressure is low</li>
+                    <li><span className="text-green-400">Algae:</span> Grows on degraded corals, controlled by urchin grazing</li>
+                    <li><span className="text-orange-400">Harvesters:</span> Remove adult urchins from the ecosystem</li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white mb-2">Conservation Insights:</h4>
+                  <p>
+                    Finding the right balance between urchin populations and harvesting is crucial for coral reef health. Too many urchins can overgraze corals, while too few allow algae to overgrow and smother the reef.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowInfo(false)}
+                className="mt-6 px-6 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 rounded-xl font-semibold transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    </ErrorBoundary>
+
+      <style jsx>{`
+        @keyframes gradient {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.8; }
+        }
+        
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-5px); }
+        }
+        
+        .animate-gradient {
+          background-size: 200% 200%;
+          animation: gradient 3s ease infinite;
+        }
+        
+        .slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          background: linear-gradient(135deg, #00ffcc 0%, #00d4aa 100%);
+          border-radius: 50%;
+          cursor: pointer;
+          box-shadow: 0 2px 10px rgba(0, 255, 204, 0.5);
+          transition: all 0.3s ease;
+        }
+        
+        .slider::-webkit-slider-thumb:hover {
+          transform: scale(1.2);
+          box-shadow: 0 2px 20px rgba(0, 255, 204, 0.7);
+        }
+        
+        .slider::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          background: linear-gradient(135deg, #00ffcc 0%, #00d4aa 100%);
+          border-radius: 50%;
+          cursor: pointer;
+          box-shadow: 0 2px 10px rgba(0, 255, 204, 0.5);
+          transition: all 0.3s ease;
+          border: none;
+        }
+        
+        .slider::-moz-range-thumb:hover {
+          transform: scale(1.2);
+          box-shadow: 0 2px 20px rgba(0, 255, 204, 0.7);
+        }
+      `}</style>
+    </div>
   );
 };
 

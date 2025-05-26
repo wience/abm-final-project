@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import SeaUrchinEcosystemModel from './SeaUrchinEcosystemModel';
 import './index.css';
+import SeaUrchinEcosystemModel from './SeaUrchinEcosystemModel';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
