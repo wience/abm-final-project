@@ -46,7 +46,9 @@ const SeaUrchinEcosystemModel = () => {
     maxAlgaeDensity: 0.8,
     
     // Simulation parameters
-    tickRate: 100  // milliseconds between ticks
+    tickRate: 100,  // milliseconds between ticks
+    speedMultiplier: 1,  // number of simulation steps per tick
+    turboMode: false  // skip rendering for maximum speed
   });
 
   // Sprite styles state
@@ -207,6 +209,12 @@ const SeaUrchinEcosystemModel = () => {
       ...prev,
       ...preset.params
     }));
+    // If harvester count is in the preset, update harvesters immediately
+    if (preset.params.harvesterCount !== undefined) {
+      setTimeout(() => {
+        updateHarvesterCount(preset.params.harvesterCount);
+      }, 50);
+    }
     initializeSimulation();
   };
 
@@ -266,6 +274,78 @@ const SeaUrchinEcosystemModel = () => {
     }
     return harvesters;
   }, [params.harvesterCount, params.harvesterSpeed, width, height]);
+
+  // Update sea urchin count
+  const updateUrchinCount = useCallback((newCount) => {
+    setAgents(prevAgents => {
+      const currentCount = prevAgents.seaUrchins.length;
+      
+      if (newCount > currentCount) {
+        // Add new urchins
+        const newUrchins = [];
+        for (let i = currentCount; i < newCount; i++) {
+          newUrchins.push({
+            id: `urchin-${Date.now()}-${i}`,
+            x: Math.random() * width,
+            y: Math.random() * height,
+            vx: (Math.random() - 0.5) * params.urchinSpeed,
+            vy: (Math.random() - 0.5) * params.urchinSpeed,
+            age: Math.random() > 0.5 ? params.maturityTime + 1 : 0,
+            isAdult: Math.random() > 0.5,
+            energy: 50,
+            lastSpawn: 0
+          });
+        }
+        return {
+          ...prevAgents,
+          seaUrchins: [...prevAgents.seaUrchins, ...newUrchins]
+        };
+      } else if (newCount < currentCount) {
+        // Remove excess urchins randomly
+        const shuffled = [...prevAgents.seaUrchins].sort(() => Math.random() - 0.5);
+        return {
+          ...prevAgents,
+          seaUrchins: shuffled.slice(0, newCount)
+        };
+      }
+      
+      return prevAgents;
+    });
+  }, [params.urchinSpeed, params.maturityTime, width, height]);
+
+  // Update harvesters when count changes
+  const updateHarvesterCount = useCallback((newCount) => {
+    setAgents(prevAgents => {
+      const currentCount = prevAgents.harvesters.length;
+      
+      if (newCount > currentCount) {
+        // Add new harvesters
+        const newHarvesters = [];
+        for (let i = currentCount; i < newCount; i++) {
+          newHarvesters.push({
+            id: `harvester-${Date.now()}-${i}`,
+            x: Math.random() * width,
+            y: Math.random() * height,
+            vx: (Math.random() - 0.5) * params.harvesterSpeed,
+            vy: (Math.random() - 0.5) * params.harvesterSpeed,
+            harvestCount: 0
+          });
+        }
+        return {
+          ...prevAgents,
+          harvesters: [...prevAgents.harvesters, ...newHarvesters]
+        };
+      } else if (newCount < currentCount) {
+        // Remove excess harvesters
+        return {
+          ...prevAgents,
+          harvesters: prevAgents.harvesters.slice(0, newCount)
+        };
+      }
+      
+      return prevAgents;
+    });
+  }, [params.harvesterSpeed, width, height]);
 
   // Initialize simulation
   const initializeSimulation = useCallback(() => {
@@ -935,31 +1015,58 @@ const SeaUrchinEcosystemModel = () => {
   useEffect(() => {
     let animationId;
     let lastStep = performance.now();
+    let turboInterval;
     
     function loop(now) {
       if (playingRef.current) {
         // Step physics at tickRate
         if (now - lastStep > params.tickRate) {
-          stepSimulation();
+          // Run multiple simulation steps based on speed multiplier
+          for (let i = 0; i < params.speedMultiplier; i++) {
+            stepSimulation();
+          }
           lastStep = now;
         }
         
-        // Always render at browser frame rate
-        renderFrame();
+        // Always render at browser frame rate unless in turbo mode
+        if (!params.turboMode) {
+          renderFrame();
+        }
         animationId = requestAnimationFrame(loop);
       }
     }
     
+    // Turbo mode - run simulation as fast as possible without rendering
+    function turboLoop() {
+      if (playingRef.current && params.turboMode) {
+        for (let i = 0; i < params.speedMultiplier * 10; i++) {
+          stepSimulation();
+        }
+        // Render occasionally to show progress
+        if (tickRef.current % 100 === 0) {
+          renderFrame();
+        }
+      }
+    }
+    
     if (isRunning) {
-      animationId = requestAnimationFrame(loop);
+      if (params.turboMode) {
+        // Use setInterval for turbo mode to bypass RAF limitations
+        turboInterval = setInterval(turboLoop, 1);
+      } else {
+        animationId = requestAnimationFrame(loop);
+      }
     }
     
     return () => {
       if (animationId) {
         cancelAnimationFrame(animationId);
       }
+      if (turboInterval) {
+        clearInterval(turboInterval);
+      }
     };
-  }, [isRunning, params.tickRate, stepSimulation, renderFrame]);
+  }, [isRunning, params.tickRate, params.speedMultiplier, params.turboMode, stepSimulation, renderFrame]);
 
   // Initialize on mount
   useEffect(() => {
@@ -992,6 +1099,12 @@ const SeaUrchinEcosystemModel = () => {
         harvester: !!customSprites.harvester,
         coral: !!customSprites.coral,
         algae: !!customSprites.algae
+      },
+      simulationSpeed: {
+        tickRate: params.tickRate,
+        speedMultiplier: params.speedMultiplier,
+        turboMode: params.turboMode,
+        effectiveSpeed: params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier
       },
       timestamp: new Date().toISOString()
     };
@@ -1176,7 +1289,9 @@ const SeaUrchinEcosystemModel = () => {
           maxDensity: params.maxAlgaeDensity
         },
         simulation: {
-          tickRate: params.tickRate
+          tickRate: params.tickRate,
+          speedMultiplier: params.speedMultiplier,
+          turboMode: params.turboMode
         }
       },
       timeSeries: {
@@ -1238,6 +1353,12 @@ Coral & Algae Settings:
   • Initial Coverage: ${params.initialCoralCoverage}%
   • Healing Rate: ${(params.coralHealingRate * 100).toFixed(0)}%
   • Algae Growth Rate: ${(params.algaeGrowthRate * 100).toFixed(0)}%
+
+Simulation Speed:
+  • Tick Rate: ${params.tickRate}ms
+  • Speed Multiplier: ${params.speedMultiplier}x
+  • Turbo Mode: ${params.turboMode ? 'Enabled' : 'Disabled'}
+  • Effective Speed: ${params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier}x
 
 ANALYSIS SUMMARY
 ----------------
@@ -1333,7 +1454,10 @@ DATA POINTS: ${history.ticks.length}
     csv += `Harvester Speed,${params.harvesterSpeed}\n`;
     csv += `Initial Coral Coverage,${params.initialCoralCoverage}\n`;
     csv += `Coral Healing Rate,${params.coralHealingRate}\n`;
-    csv += `Algae Growth Rate,${params.algaeGrowthRate}\n\n`;
+    csv += `Algae Growth Rate,${params.algaeGrowthRate}\n`;
+    csv += `Tick Rate,${params.tickRate}\n`;
+    csv += `Speed Multiplier,${params.speedMultiplier}\n`;
+    csv += `Turbo Mode,${params.turboMode}\n\n`;
     
     csv += 'TIME SERIES DATA\n';
     csv += 'Tick,Urchin Population,Coral Health %,Algae Coverage %\n';
@@ -1483,7 +1607,8 @@ DATA POINTS: ${history.ticks.length}
       orange: '#ff7f50',
       pink: '#ff6b8a',
       green: '#00d474',
-      purple: '#a855f7'
+      purple: '#a855f7',
+      yellow: '#facc15'
     };
     
     return (
@@ -1714,6 +1839,51 @@ DATA POINTS: ${history.ticks.length}
                     )}
                   </div>
                 </div>
+                
+                {/* Speed Presets */}
+                <div className="grid grid-cols-4 gap-2 mt-3">
+                  <button
+                    onClick={() => setParams({...params, tickRate: 100, speedMultiplier: 1, turboMode: false})}
+                    className={`py-1 px-2 rounded-lg text-xs font-medium transition-all ${
+                      params.tickRate === 100 && params.speedMultiplier === 1 && !params.turboMode
+                        ? 'bg-cyan-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    Normal
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, tickRate: 50, speedMultiplier: 2, turboMode: false})}
+                    className={`py-1 px-2 rounded-lg text-xs font-medium transition-all ${
+                      params.tickRate === 50 && params.speedMultiplier === 2 && !params.turboMode
+                        ? 'bg-cyan-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    Fast
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, tickRate: 10, speedMultiplier: 10, turboMode: false})}
+                    className={`py-1 px-2 rounded-lg text-xs font-medium transition-all ${
+                      params.tickRate === 10 && params.speedMultiplier === 10 && !params.turboMode
+                        ? 'bg-cyan-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    Ultra
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, tickRate: 1, speedMultiplier: 50, turboMode: true})}
+                    className={`py-1 px-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1 ${
+                      params.turboMode
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    <Zap className="w-3 h-3" />
+                    Turbo
+                  </button>
+                </div>
               </div>
 
               <div className="mt-6 pt-6 border-t border-slate-700/50">
@@ -1728,6 +1898,36 @@ DATA POINTS: ${history.ticks.length}
                   color="purple"
                 />
                 <p className="text-xs text-gray-500 mt-2 text-center">Lower = Faster</p>
+                
+                <div className="mt-4">
+                  <CustomSlider
+                    label="Speed Multiplier"
+                    value={params.speedMultiplier}
+                    onChange={(e) => setParams({...params, speedMultiplier: parseInt(e.target.value)})}
+                    min={1}
+                    max={100}
+                    step={1}
+                    unit="x"
+                    color="yellow"
+                  />
+                  <p className="text-xs text-gray-500 mt-2 text-center">Steps per tick</p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-700/50">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-sm text-gray-400 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-yellow-400" />
+                      Turbo Mode
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={params.turboMode}
+                      onChange={(e) => setParams({...params, turboMode: e.target.checked})}
+                      className="w-4 h-4 text-yellow-600 bg-gray-700 border-gray-600 rounded focus:ring-yellow-500 focus:ring-2"
+                    />
+                  </label>
+                  <p className="text-xs text-gray-500 mt-2">Ultra-fast simulation (minimal rendering)</p>
+                </div>
               </div>
 
               <div className="mt-4 p-3 bg-slate-900/50 rounded-xl">
@@ -1735,6 +1935,21 @@ DATA POINTS: ${history.ticks.length}
                   <span className="text-gray-400">Simulation Time</span>
                   <span className="font-mono font-bold text-cyan-400">Tick {tick}</span>
                 </div>
+                {(params.speedMultiplier > 1 || params.turboMode) && (
+                  <div className="flex items-center justify-between text-sm mt-2">
+                    <span className="text-gray-400">Effective Speed</span>
+                    <span className="font-mono font-bold text-yellow-400 flex items-center gap-1">
+                      {params.turboMode ? (
+                        <>
+                          <Zap className="w-3 h-3" />
+                          {params.speedMultiplier * 10}x TURBO
+                        </>
+                      ) : (
+                        `${params.speedMultiplier}x`
+                      )}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 pt-4 border-t border-slate-700/50">
@@ -1756,15 +1971,32 @@ DATA POINTS: ${history.ticks.length}
                 <span>🦔</span> Sea Urchin Parameters
               </h3>
               <div className="space-y-4">
-                <CustomSlider
-                  label="Initial Population"
-                  value={params.initialUrchins}
-                  onChange={(e) => setParams({...params, initialUrchins: parseInt(e.target.value)})}
-                  min={10}
-                  max={100}
-                  unit=""
-                  color="cyan"
-                />
+                <div className="space-y-4">
+                  <CustomSlider
+                    label="Initial Population"
+                    value={params.initialUrchins}
+                    onChange={(e) => setParams({...params, initialUrchins: parseInt(e.target.value)})}
+                    min={10}
+                    max={100}
+                    unit=""
+                    color="cyan"
+                  />
+                  <div className="flex items-center gap-2 p-2 bg-slate-900/50 rounded-lg">
+                    <span className="text-xs text-gray-400">Current: {agents.seaUrchins.length}</span>
+                    <button
+                      onClick={() => updateUrchinCount(agents.seaUrchins.length + 10)}
+                      className="ml-auto px-2 py-1 text-xs bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 rounded transition-colors"
+                    >
+                      +10
+                    </button>
+                    <button
+                      onClick={() => updateUrchinCount(Math.max(0, agents.seaUrchins.length - 10))}
+                      className="px-2 py-1 text-xs bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded transition-colors"
+                    >
+                      -10
+                    </button>
+                  </div>
+                </div>
                 <CustomSlider
                   label="Reproduction Rate"
                   value={params.reproductionRate}
@@ -1814,15 +2046,24 @@ DATA POINTS: ${history.ticks.length}
                 <span>🎣</span> Harvester Parameters
               </h3>
               <div className="space-y-4">
-                <CustomSlider
-                  label="Number of Harvesters"
-                  value={params.harvesterCount}
-                  onChange={(e) => setParams({...params, harvesterCount: parseInt(e.target.value)})}
-                  min={0}
-                  max={10}
-                  unit=""
-                  color="orange"
-                />
+                <div className="space-y-2">
+                  <CustomSlider
+                    label="Number of Harvesters"
+                    value={params.harvesterCount}
+                    onChange={(e) => {
+                      const newCount = parseInt(e.target.value);
+                      setParams({...params, harvesterCount: newCount});
+                      updateHarvesterCount(newCount);
+                    }}
+                    min={0}
+                    max={10}
+                    unit=""
+                    color="orange"
+                  />
+                  <div className="text-xs text-gray-400 bg-slate-900/50 rounded px-2 py-1">
+                    Current: {agents.harvesters.length} harvesters
+                  </div>
+                </div>
                 <CustomSlider
                   label="Harvesting Rate"
                   value={params.harvestingRate}
@@ -1945,9 +2186,16 @@ DATA POINTS: ${history.ticks.length}
                 {/* Overlay stats */}
                 <div className={`absolute top-4 right-4 ${lowPerformanceMode ? 'bg-slate-900/80' : 'bg-slate-900/80 backdrop-blur-lg'} rounded-xl p-3 border border-slate-700/50`}>
                   <div className="flex items-center gap-2 text-sm">
-                    <Zap className="w-4 h-4 text-yellow-400" />
-                    <span className="font-mono text-yellow-400">{isRunning ? 'Running' : 'Paused'}</span>
+                    <Zap className={`w-4 h-4 ${params.turboMode ? 'text-yellow-400 animate-pulse' : 'text-yellow-400'}`} />
+                    <span className={`font-mono ${params.turboMode ? 'text-yellow-400' : 'text-yellow-400'}`}>
+                      {isRunning ? (params.turboMode ? 'TURBO' : 'Running') : 'Paused'}
+                    </span>
                   </div>
+                  {params.speedMultiplier > 1 && (
+                    <div className="text-xs text-gray-400 mt-1">
+                      {params.turboMode ? `${params.speedMultiplier * 10}x` : `${params.speedMultiplier}x`} speed
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2052,6 +2300,32 @@ DATA POINTS: ${history.ticks.length}
                     <li><span className="text-green-400">CSV:</span> Time series data for analysis in Excel or R</li>
                     <li><span className="text-purple-400">Full Report:</span> Comprehensive data including graph, state, and parameters</li>
                     <li><span className="text-pink-400">PNG/SVG:</span> Visual exports of the simulation or charts</li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white mb-2">Speed Controls:</h4>
+                  <p>
+                    The simulation offers multiple speed options:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 mt-2">
+                    <li><span className="text-cyan-400">Normal:</span> Standard speed for observing interactions</li>
+                    <li><span className="text-cyan-400">Fast:</span> 2x speed with 50ms tick rate</li>
+                    <li><span className="text-cyan-400">Ultra:</span> 10x speed for rapid testing</li>
+                    <li><span className="text-yellow-400">Turbo Mode:</span> 500x speed with minimal rendering for ultra-fast simulation</li>
+                  </ul>
+                  <p className="mt-2">
+                    Use the Speed Multiplier slider and Turbo Mode toggle for custom speeds up to 1000x normal speed.
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white mb-2">Live Adjustments:</h4>
+                  <p>
+                    You can now adjust key parameters during simulation without resetting:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 mt-2">
+                    <li><span className="text-orange-400">Harvester Count:</span> Add or remove harvesters in real-time</li>
+                    <li><span className="text-cyan-400">Urchin Population:</span> Use +10/-10 buttons to manually adjust population</li>
+                    <li>Other parameters update simulation behavior immediately</li>
                   </ul>
                 </div>
                 <div>
