@@ -1208,13 +1208,13 @@ const SeaUrchinEcosystemModel = () => {
               </div>
 
               <div className="mt-6 pt-6 border-t border-slate-700/50">
-                <CustomSlider
+              <CustomSlider
                   label="Simulation Speed"
                   value={params.tickRate}
                   onChange={(e) => setParams({...params, tickRate: parseInt(e.target.value)})}
                   min={1}
                   max={500}
-                  step={10}
+                  step={params.tickRate <= 10 ? 1 : 10}
                   unit="ms"
                   color="purple"
                 />
