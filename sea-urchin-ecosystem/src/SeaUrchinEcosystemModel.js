@@ -32,7 +32,7 @@ const SeaUrchinEcosystemModel = () => {
     // Harvester parameters
     harvesterCount: 3,
     harvestingRate: 1.0,
-    harvesterSpeed: 1.0,
+    harvesterSpeed: 1.5,
     harvestRadius: 30,
     
     // Coral parameters
@@ -128,7 +128,7 @@ const SeaUrchinEcosystemModel = () => {
         harvesterCount: 3,
         initialCoralCoverage: 40,
         grazingRate: 0.5,
-        harvestingRate: 1.0
+        harvestingRate: 1.5
       }
     },
     overfishing: {
