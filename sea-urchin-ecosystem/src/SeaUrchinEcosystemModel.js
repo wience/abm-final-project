@@ -41,7 +41,7 @@ const SeaUrchinEcosystemModel = () => {
     coralDegradationThreshold: 30,
     
     // Algae parameters
-    algaeGrowthRate: 0.025,
+    algaeGrowthRate: 0.13,
     maxAlgaeDensity: 0.9,
     
     // Simulation parameters
@@ -149,7 +149,7 @@ const SeaUrchinEcosystemModel = () => {
         initialUrchins: 50,
         harvesterCount: 1,
         initialCoralCoverage: 40,
-        grazingRate: 1.5,
+        grazingRate: 2,
         harvestingRate: 0.5
       }
     },
