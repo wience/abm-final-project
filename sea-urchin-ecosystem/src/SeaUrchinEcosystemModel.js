@@ -2808,7 +2808,7 @@ DATA COLLECTION
                   value={params.algaeGrowthRate}
                   onChange={(e) => setParams({...params, algaeGrowthRate: parseFloat(e.target.value)})}
                   min={0}
-                  max={0.1}
+                  max={1}
                   step={0.01}
                   unit=""
                   color="green"
