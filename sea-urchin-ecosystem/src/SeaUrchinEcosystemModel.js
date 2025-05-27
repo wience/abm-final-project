@@ -82,6 +82,16 @@ const SeaUrchinEcosystemModel = () => {
     algaeCoverage: []
   });
 
+  // Additional history tracking for new charts
+  const [detailedHistory, setDetailedHistory] = useState({
+    healthyCorals: [],
+    degradedCorals: [],
+    deadCorals: [],
+    juvenileUrchins: [],
+    adultUrchins: [],
+    harvestedTotal: []  // Changed to track cumulative total
+  });
+
   // UI state
   const [showInfo, setShowInfo] = useState(false);
   const [lowPerformanceMode, setLowPerformanceMode] = useState(false);
@@ -370,6 +380,14 @@ const SeaUrchinEcosystemModel = () => {
       coralHealth: [],
       algaeCoverage: []
     });
+    setDetailedHistory({
+      healthyCorals: [],
+      degradedCorals: [],
+      deadCorals: [],
+      juvenileUrchins: [],
+      adultUrchins: [],
+      harvestedTotal: []
+    });
     setStats({
       juvenileUrchins: 0,
       adultUrchins: 0,
@@ -602,6 +620,8 @@ const SeaUrchinEcosystemModel = () => {
         const adults = currentAgents.seaUrchins.filter(u => u.isAdult).length;
         const totalUrchins = juveniles + adults;
         const healthy = currentAgents.corals.filter(c => c.status === 'healthy').length;
+        const degraded = currentAgents.corals.filter(c => c.status === 'degraded').length;
+        const dead = currentAgents.corals.filter(c => c.status === 'dead').length;
         const totalCorals = currentAgents.corals.length;
         const coralHealthPercent = totalCorals > 0 ? (healthy / totalCorals) * 100 : 0;
         const avgAlgae = currentAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / currentAgents.corals.length * 100;
@@ -617,6 +637,16 @@ const SeaUrchinEcosystemModel = () => {
           urchinPop: [...prev.urchinPop, totalUrchins].slice(-historyLimit),
           coralHealth: [...prev.coralHealth, coralHealthPercent].slice(-historyLimit),
           algaeCoverage: [...prev.algaeCoverage, avgAlgae].slice(-historyLimit)
+        }));
+
+        // Update detailed history
+        setDetailedHistory(prev => ({
+          healthyCorals: [...prev.healthyCorals, healthy].slice(-historyLimit),
+          degradedCorals: [...prev.degradedCorals, degraded].slice(-historyLimit),
+          deadCorals: [...prev.deadCorals, dead].slice(-historyLimit),
+          juvenileUrchins: [...prev.juvenileUrchins, juveniles].slice(-historyLimit),
+          adultUrchins: [...prev.adultUrchins, adults].slice(-historyLimit),
+          harvestedTotal: [...prev.harvestedTotal, statsAccumRef.current.harvestedCount].slice(-historyLimit)
         }));
       }
     }
@@ -1067,6 +1097,7 @@ const SeaUrchinEcosystemModel = () => {
     const data = {
       parameters: params,
       history: history,
+      detailedHistory: detailedHistory,
       finalStats: stats,
       dataCollection: {
         totalDataPoints: history.ticks.length,
@@ -1289,7 +1320,13 @@ const SeaUrchinEcosystemModel = () => {
         ticks: history.ticks,
         urchinPopulation: history.urchinPop,
         coralHealthPercentage: history.coralHealth,
-        algaeCoveragePercentage: history.algaeCoverage
+        algaeCoveragePercentage: history.algaeCoverage,
+        juvenileUrchins: detailedHistory.juvenileUrchins,
+        adultUrchins: detailedHistory.adultUrchins,
+        healthyCorals: detailedHistory.healthyCorals,
+        degradedCorals: detailedHistory.degradedCorals,
+        deadCorals: detailedHistory.deadCorals,
+        cumulativeHarvested: detailedHistory.harvestedTotal
       },
       analysis: {
         averageUrchins: history.urchinPop.length > 0 ? (history.urchinPop.reduce((a, b) => a + b, 0) / history.urchinPop.length).toFixed(2) : 0,
@@ -1411,11 +1448,11 @@ DATA COLLECTION
   // Export time series data as CSV
   const exportTimeSeriesCSV = () => {
     // Create CSV header
-    let csv = 'Tick,Urchin Population,Coral Health %,Algae Coverage %\n';
+    let csv = 'Tick,Total Urchins,Juvenile Urchins,Adult Urchins,Coral Health %,Algae Coverage %,Healthy Corals,Degraded Corals,Dead Corals,Cumulative Harvested\n';
     
     // Add data rows
     for (let i = 0; i < history.ticks.length; i++) {
-      csv += `${history.ticks[i]},${history.urchinPop[i]},${history.coralHealth[i].toFixed(2)},${history.algaeCoverage[i].toFixed(2)}\n`;
+      csv += `${history.ticks[i]},${history.urchinPop[i]},${detailedHistory.juvenileUrchins[i] || 0},${detailedHistory.adultUrchins[i] || 0},${history.coralHealth[i].toFixed(2)},${history.algaeCoverage[i].toFixed(2)},${detailedHistory.healthyCorals[i] || 0},${detailedHistory.degradedCorals[i] || 0},${detailedHistory.deadCorals[i] || 0},${detailedHistory.harvestedTotal[i] || 0}\n`;
     }
     
     // Create blob and download
@@ -1479,11 +1516,11 @@ DATA COLLECTION
     csv += `Simulation Duration,${tick} ticks\n\n`;
     
     csv += 'TIME SERIES DATA\n';
-    csv += 'Tick,Urchin Population,Coral Health %,Algae Coverage %\n';
+    csv += 'Tick,Total Urchins,Juvenile Urchins,Adult Urchins,Coral Health %,Algae Coverage %,Healthy Corals,Degraded Corals,Dead Corals,Cumulative Harvested\n';
     
     // Add time series data
     for (let i = 0; i < history.ticks.length; i++) {
-      csv += `${history.ticks[i]},${history.urchinPop[i]},${history.coralHealth[i].toFixed(2)},${history.algaeCoverage[i].toFixed(2)}\n`;
+      csv += `${history.ticks[i]},${history.urchinPop[i]},${detailedHistory.juvenileUrchins[i] || 0},${detailedHistory.adultUrchins[i] || 0},${history.coralHealth[i].toFixed(2)},${history.algaeCoverage[i].toFixed(2)},${detailedHistory.healthyCorals[i] || 0},${detailedHistory.degradedCorals[i] || 0},${detailedHistory.deadCorals[i] || 0},${detailedHistory.harvestedTotal[i] || 0}\n`;
     }
     
     // Create blob and download
@@ -1616,6 +1653,471 @@ DATA COLLECTION
     }, [history.ticks, history.urchinPop, history.coralHealth, history.algaeCoverage]);
     
     return <svg ref={chartRef} className="chart-svg"></svg>;
+  };
+
+  // Coral Health Stacked Area Chart
+  const CoralHealthChart = () => {
+    const chartRef = useRef(null);
+    const svgInitialized = useRef(false);
+    
+    useEffect(() => {
+      if (!chartRef.current || history.ticks.length === 0) return;
+      
+      const margin = { top: 20, right: 60, bottom: 50, left: 50 };
+      const chartWidth = 400 - margin.left - margin.right;
+      const chartHeight = 200 - margin.top - margin.bottom;
+      
+      const svg = d3.select(chartRef.current);
+      
+      if (!svgInitialized.current) {
+        svg.attr('width', chartWidth + margin.left + margin.right)
+           .attr('height', chartHeight + margin.top + margin.bottom);
+        
+        const g = svg.append('g')
+          .attr('transform', `translate(${margin.left},${margin.top})`)
+          .attr('class', 'chart-group');
+        
+        g.append('g').attr('class', 'x-axis').attr('transform', `translate(0,${chartHeight})`);
+        g.append('g').attr('class', 'y-axis');
+        
+        // Add areas
+        g.append('path').attr('class', 'area-healthy').attr('fill', '#ff6b8a').attr('opacity', 0.8);
+        g.append('path').attr('class', 'area-degraded').attr('fill', '#fbbf24').attr('opacity', 0.8);
+        g.append('path').attr('class', 'area-dead').attr('fill', '#64748b').attr('opacity', 0.8);
+        
+        g.append('text')
+          .attr('y', chartHeight + 40)
+          .attr('x', chartWidth / 2)
+          .style('text-anchor', 'middle')
+          .style('fill', '#94a3b8')
+          .style('font-size', '12px')
+          .style('font-weight', '600')
+          .text('Time (ticks)');
+        
+        svgInitialized.current = true;
+      }
+      
+      const g = svg.select('.chart-group');
+      
+      // Prepare stacked data
+      const data = history.ticks.map((tick, i) => ({
+        tick: tick,
+        healthy: detailedHistory.healthyCorals[i] || 0,
+        degraded: detailedHistory.degradedCorals[i] || 0,
+        dead: detailedHistory.deadCorals[i] || 0
+      }));
+      
+      const stack = d3.stack()
+        .keys(['healthy', 'degraded', 'dead'])
+        .order(d3.stackOrderNone)
+        .offset(d3.stackOffsetNone);
+      
+      const series = stack(data);
+      
+      const xScale = d3.scaleLinear()
+        .domain([Math.min(...history.ticks), Math.max(...history.ticks)])
+        .range([0, chartWidth]);
+      
+      const yScale = d3.scaleLinear()
+        .domain([0, d3.max(series, s => d3.max(s, d => d[1]))])
+        .range([chartHeight, 0]);
+      
+      const area = d3.area()
+        .x(d => xScale(d.data.tick))
+        .y0(d => yScale(d[0]))
+        .y1(d => yScale(d[1]))
+        .curve(d3.curveMonotoneX);
+      
+      g.select('.x-axis').call(d3.axisBottom(xScale).ticks(5))
+        .selectAll('text').style('fill', '#94a3b8');
+      g.select('.y-axis').call(d3.axisLeft(yScale).ticks(5))
+        .selectAll('text').style('fill', '#94a3b8');
+      
+      g.selectAll('.domain').style('stroke', '#475569');
+      g.selectAll('.tick line').style('stroke', '#475569');
+      
+      g.select('.area-healthy').datum(series[0]).attr('d', area);
+      g.select('.area-degraded').datum(series[1]).attr('d', area);
+      g.select('.area-dead').datum(series[2]).attr('d', area);
+      
+    }, [history.ticks, detailedHistory]);
+    
+    return <svg ref={chartRef} className="coral-health-chart"></svg>;
+  };
+
+  // Ecosystem Composition Donut Chart
+  const EcosystemCompositionChart = () => {
+    const chartRef = useRef(null);
+    
+    useEffect(() => {
+      if (!chartRef.current) return;
+      
+      const width = 200;
+      const height = 200;
+      const margin = 20;
+      const radius = Math.min(width, height) / 2 - margin;
+      
+      const svg = d3.select(chartRef.current);
+      svg.selectAll('*').remove();
+      
+      svg.attr('width', width).attr('height', height);
+      
+      const g = svg.append('g')
+        .attr('transform', `translate(${width / 2}, ${height / 2})`);
+      
+      const totalCorals = stats.healthyCorals + stats.degradedCorals + stats.deadCorals;
+      const data = [
+        { label: 'Healthy', value: stats.healthyCorals, color: '#ff6b8a' },
+        { label: 'Degraded', value: stats.degradedCorals, color: '#fbbf24' },
+        { label: 'Dead', value: stats.deadCorals, color: '#64748b' },
+        { label: 'Algae', value: Math.round(stats.algaeCoverage * totalCorals / 100), color: '#00d474' }
+      ];
+      
+      const pie = d3.pie()
+        .value(d => d.value)
+        .sort(null);
+      
+      const arc = d3.arc()
+        .innerRadius(radius * 0.6)
+        .outerRadius(radius);
+      
+      const arcs = g.selectAll('.arc')
+        .data(pie(data))
+        .enter().append('g')
+        .attr('class', 'arc');
+      
+      arcs.append('path')
+        .attr('d', arc)
+        .attr('fill', d => d.data.color)
+        .attr('opacity', 0.8)
+        .attr('stroke', '#1f2937')
+        .attr('stroke-width', 2);
+      
+      // Center text
+      g.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .style('font-size', '24px')
+        .style('font-weight', 'bold')
+        .style('fill', '#fff')
+        .text(stats.totalUrchins);
+      
+      g.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('y', 20)
+        .style('font-size', '12px')
+        .style('fill', '#94a3b8')
+        .text('Urchins');
+      
+    }, [stats]);
+    
+    return <svg ref={chartRef} className="ecosystem-composition-chart"></svg>;
+  };
+
+  // Urchin Demographics Bar Chart
+  const UrchinDemographicsChart = () => {
+    const chartRef = useRef(null);
+    
+    useEffect(() => {
+      if (!chartRef.current || detailedHistory.juvenileUrchins.length === 0) return;
+      
+      const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+      const chartWidth = 400 - margin.left - margin.right;
+      const chartHeight = 200 - margin.top - margin.bottom;
+      
+      const svg = d3.select(chartRef.current);
+      svg.selectAll('*').remove();
+      
+      svg.attr('width', chartWidth + margin.left + margin.right)
+         .attr('height', chartHeight + margin.top + margin.bottom);
+      
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+      
+      // Take last 20 data points for clarity
+      const recentData = history.ticks.slice(-20).map((tick, i) => ({
+        tick: tick,
+        juvenile: detailedHistory.juvenileUrchins[detailedHistory.juvenileUrchins.length - 20 + i] || 0,
+        adult: detailedHistory.adultUrchins[detailedHistory.adultUrchins.length - 20 + i] || 0
+      }));
+      
+      const xScale = d3.scaleBand()
+        .domain(recentData.map(d => d.tick))
+        .range([0, chartWidth])
+        .padding(0.1);
+      
+      const yScale = d3.scaleLinear()
+        .domain([0, d3.max(recentData, d => d.juvenile + d.adult)])
+        .range([chartHeight, 0]);
+      
+      // Add axes
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(xScale).tickValues(xScale.domain().filter((d, i) => i % 4 === 0)))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.append('g')
+        .call(d3.axisLeft(yScale).ticks(5))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.selectAll('.domain').style('stroke', '#475569');
+      g.selectAll('.tick line').style('stroke', '#475569');
+      
+      // Add stacked bars
+      const stack = d3.stack()
+        .keys(['juvenile', 'adult']);
+      
+      const series = stack(recentData);
+      
+      const colors = ['#67e8f9', '#00ffcc']; // Light cyan for juveniles, bright cyan for adults
+      
+      g.selectAll('.series')
+        .data(series)
+        .enter().append('g')
+        .attr('fill', (d, i) => colors[i])
+        .attr('opacity', 0.8)
+        .selectAll('rect')
+        .data(d => d)
+        .enter().append('rect')
+        .attr('x', d => xScale(d.data.tick))
+        .attr('y', d => yScale(d[1]))
+        .attr('height', d => yScale(d[0]) - yScale(d[1]))
+        .attr('width', xScale.bandwidth());
+      
+    }, [history.ticks, detailedHistory]);
+    
+    return <svg ref={chartRef} className="urchin-demographics-chart"></svg>;
+  };
+
+  // Phase Space Diagram
+  const PhaseSpaceChart = () => {
+    const chartRef = useRef(null);
+    
+    useEffect(() => {
+      if (!chartRef.current || history.ticks.length === 0) return;
+      
+      const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+      const chartWidth = 400 - margin.left - margin.right;
+      const chartHeight = 300 - margin.top - margin.bottom;
+      
+      const svg = d3.select(chartRef.current);
+      svg.selectAll('*').remove();
+      
+      svg.attr('width', chartWidth + margin.left + margin.right)
+         .attr('height', chartHeight + margin.top + margin.bottom);
+      
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+      
+      const data = history.urchinPop.map((u, i) => ({
+        urchins: u,
+        coral: history.coralHealth[i] || 0
+      }));
+      
+      const xScale = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.urchins)])
+        .range([0, chartWidth]);
+      
+      const yScale = d3.scaleLinear()
+        .domain([0, 100])
+        .range([chartHeight, 0]);
+      
+      // Add axes
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(xScale).ticks(5))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.append('g')
+        .call(d3.axisLeft(yScale).ticks(5))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.selectAll('.domain').style('stroke', '#475569');
+      g.selectAll('.tick line').style('stroke', '#475569');
+      
+      // Add axis labels
+      g.append('text')
+        .attr('transform', 'rotate(-90)')
+        .attr('y', 0 - margin.left)
+        .attr('x', 0 - (chartHeight / 2))
+        .attr('dy', '1em')
+        .style('text-anchor', 'middle')
+        .style('fill', '#ff6b8a')
+        .style('font-size', '12px')
+        .style('font-weight', '600')
+        .text('Coral Health %');
+      
+      g.append('text')
+        .attr('y', chartHeight + 40)
+        .attr('x', chartWidth / 2)
+        .style('text-anchor', 'middle')
+        .style('fill', '#00ffcc')
+        .style('font-size', '12px')
+        .style('font-weight', '600')
+        .text('Urchin Population');
+      
+      // Add gradient for time
+      const colorScale = d3.scaleSequential(d3.interpolateViridis)
+        .domain([0, data.length - 1]);
+      
+      // Draw path
+      const line = d3.line()
+        .x(d => xScale(d.urchins))
+        .y(d => yScale(d.coral))
+        .curve(d3.curveLinear);
+      
+      // Draw dots
+      g.selectAll('.dot')
+        .data(data)
+        .enter().append('circle')
+        .attr('class', 'dot')
+        .attr('r', 3)
+        .attr('cx', d => xScale(d.urchins))
+        .attr('cy', d => yScale(d.coral))
+        .style('fill', (d, i) => colorScale(i))
+        .style('opacity', 0.7);
+      
+      // Draw connecting lines
+      for (let i = 0; i < data.length - 1; i++) {
+        g.append('line')
+          .attr('x1', xScale(data[i].urchins))
+          .attr('y1', yScale(data[i].coral))
+          .attr('x2', xScale(data[i + 1].urchins))
+          .attr('y2', yScale(data[i + 1].coral))
+          .style('stroke', colorScale(i))
+          .style('stroke-width', 1.5)
+          .style('opacity', 0.5);
+      }
+      
+      // Add start and end markers
+      if (data.length > 0) {
+        g.append('circle')
+          .attr('cx', xScale(data[0].urchins))
+          .attr('cy', yScale(data[0].coral))
+          .attr('r', 6)
+          .style('fill', 'none')
+          .style('stroke', '#00ffcc')
+          .style('stroke-width', 2);
+        
+        g.append('text')
+          .attr('x', xScale(data[0].urchins) + 10)
+          .attr('y', yScale(data[0].coral))
+          .style('fill', '#00ffcc')
+          .style('font-size', '10px')
+          .text('Start');
+        
+        const lastIdx = data.length - 1;
+        g.append('circle')
+          .attr('cx', xScale(data[lastIdx].urchins))
+          .attr('cy', yScale(data[lastIdx].coral))
+          .attr('r', 6)
+          .style('fill', '#ff6b8a')
+          .style('stroke', '#ff6b8a')
+          .style('stroke-width', 2);
+      }
+      
+    }, [history]);
+    
+    return <svg ref={chartRef} className="phase-space-chart"></svg>;
+  };
+  
+  // Harvesting Efficiency Chart
+  const HarvestingChart = () => {
+    const chartRef = useRef(null);
+    
+    useEffect(() => {
+      if (!chartRef.current || detailedHistory.harvestedTotal.length === 0) return;
+      
+      const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+      const chartWidth = 400 - margin.left - margin.right;
+      const chartHeight = 200 - margin.top - margin.bottom;
+      
+      const svg = d3.select(chartRef.current);
+      svg.selectAll('*').remove();
+      
+      svg.attr('width', chartWidth + margin.left + margin.right)
+         .attr('height', chartHeight + margin.top + margin.bottom);
+      
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+      
+      // Use the cumulative data directly
+      const cumulativeData = detailedHistory.harvestedTotal.map((total, i) => ({
+        tick: history.ticks[i] || i,
+        cumulative: total
+      }));
+      
+      const xScale = d3.scaleLinear()
+        .domain([0, Math.max(...history.ticks)])
+        .range([0, chartWidth]);
+      
+      const yScale = d3.scaleLinear()
+        .domain([0, Math.max(stats.harvestedUrchins, 10)])
+        .range([chartHeight, 0]);
+      
+      // Add axes
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(xScale).ticks(5))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.append('g')
+        .call(d3.axisLeft(yScale).ticks(5))
+        .selectAll('text')
+        .style('fill', '#94a3b8');
+      
+      g.selectAll('.domain').style('stroke', '#475569');
+      g.selectAll('.tick line').style('stroke', '#475569');
+      
+      // Add axis label
+      g.append('text')
+        .attr('y', chartHeight + 40)
+        .attr('x', chartWidth / 2)
+        .style('text-anchor', 'middle')
+        .style('fill', '#94a3b8')
+        .style('font-size', '12px')
+        .style('font-weight', '600')
+        .text('Time (ticks)');
+      
+      // Draw cumulative harvest line
+      const line = d3.line()
+        .x(d => xScale(d.tick))
+        .y(d => yScale(d.cumulative))
+        .curve(d3.curveMonotoneX);
+      
+      g.append('path')
+        .datum(cumulativeData)
+        .attr('fill', 'none')
+        .attr('stroke', '#ff7f50')
+        .attr('stroke-width', 3)
+        .attr('d', line);
+      
+      // Add harvest rate indicator
+      const recentData = cumulativeData.slice(-10);
+      if (recentData.length >= 2) {
+        const deltaHarvest = recentData[recentData.length - 1].cumulative - recentData[0].cumulative;
+        const deltaTicks = recentData[recentData.length - 1].tick - recentData[0].tick;
+        const harvestRate = deltaTicks > 0 ? deltaHarvest / deltaTicks : 0;
+        
+        g.append('text')
+          .attr('x', chartWidth - 10)
+          .attr('y', 20)
+          .attr('text-anchor', 'end')
+          .style('fill', '#ff7f50')
+          .style('font-size', '12px')
+          .style('font-weight', '600')
+          .text(`Rate: ${harvestRate.toFixed(2)}/tick`);
+      }
+      
+    }, [history.ticks, detailedHistory.harvestedTotal, stats.harvestedUrchins]);
+    
+    return <svg ref={chartRef} className="harvesting-chart"></svg>;
   };
 
   // Custom slider component
@@ -2471,6 +2973,114 @@ DATA COLLECTION
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-gradient-to-r from-green-400 to-green-600 rounded"></div>
                   <span className="text-sm text-gray-300">Algae Coverage %</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Advanced Analytics Section */}
+            <div className={`${lowPerformanceMode ? 'bg-slate-800/30' : 'bg-gradient-to-br from-slate-800/30 to-slate-900/30 backdrop-blur-lg'} rounded-2xl p-6 border border-slate-700/50 ${!lowPerformanceMode && 'shadow-2xl'}`}>
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400" />
+                Advanced Analytics Dashboard
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Coral Health Stacked Area */}
+                <div className={`${lowPerformanceMode ? 'bg-slate-900/30' : 'bg-slate-900/30 backdrop-blur'} rounded-xl p-4 border border-slate-700/30`}>
+                  <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                    <span className="text-pink-400">🪸</span> Coral Health Distribution
+                  </h4>
+                  <div className="flex justify-center">
+                    <CoralHealthChart />
+                  </div>
+                  <div className="flex gap-4 mt-3 justify-center text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-pink-500 rounded"></div>
+                      <span className="text-gray-400">Healthy</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-yellow-500 rounded"></div>
+                      <span className="text-gray-400">Degraded</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-gray-500 rounded"></div>
+                      <span className="text-gray-400">Dead</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Urchin Demographics */}
+                <div className={`${lowPerformanceMode ? 'bg-slate-900/30' : 'bg-slate-900/30 backdrop-blur'} rounded-xl p-4 border border-slate-700/30`}>
+                  <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                    <span className="text-cyan-400">🦔</span> Urchin Age Demographics
+                  </h4>
+                  <div className="flex justify-center">
+                    <UrchinDemographicsChart />
+                  </div>
+                  <div className="flex gap-4 mt-3 justify-center text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-cyan-300 rounded"></div>
+                      <span className="text-gray-400">Juveniles</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-cyan-500 rounded"></div>
+                      <span className="text-gray-400">Adults</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Phase Space Diagram */}
+                <div className={`${lowPerformanceMode ? 'bg-slate-900/30' : 'bg-slate-900/30 backdrop-blur'} rounded-xl p-4 border border-slate-700/30`}>
+                  <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                    <span className="text-purple-400">🌀</span> Ecosystem Phase Space
+                  </h4>
+                  <div className="flex justify-center">
+                    <PhaseSpaceChart />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    Trajectory shows ecosystem evolution over time
+                  </p>
+                </div>
+
+                {/* Harvesting Efficiency */}
+                <div className={`${lowPerformanceMode ? 'bg-slate-900/30' : 'bg-slate-900/30 backdrop-blur'} rounded-xl p-4 border border-slate-700/30`}>
+                  <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                    <span className="text-orange-400">🎣</span> Harvesting Progress
+                  </h4>
+                  <div className="flex justify-center">
+                    <HarvestingChart />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    Cumulative harvest over time
+                  </p>
+                </div>
+              </div>
+
+              {/* Ecosystem Composition at bottom */}
+              <div className={`mt-6 ${lowPerformanceMode ? 'bg-slate-900/30' : 'bg-slate-900/30 backdrop-blur'} rounded-xl p-4 border border-slate-700/30`}>
+                <h4 className="text-sm font-semibold text-gray-300 mb-3 text-center">Current Ecosystem Composition</h4>
+                <div className="flex justify-center items-center gap-8">
+                  <div className="flex justify-center">
+                    <EcosystemCompositionChart />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-pink-500 rounded"></div>
+                      <span className="text-sm text-gray-300">Healthy Corals: {stats.healthyCorals}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-yellow-500 rounded"></div>
+                      <span className="text-sm text-gray-300">Degraded Corals: {stats.degradedCorals}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-gray-500 rounded"></div>
+                      <span className="text-sm text-gray-300">Dead Corals: {stats.deadCorals}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-green-500 rounded"></div>
+                      <span className="text-sm text-gray-300">Algae Coverage: {stats.algaeCoverage.toFixed(0)}%</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
