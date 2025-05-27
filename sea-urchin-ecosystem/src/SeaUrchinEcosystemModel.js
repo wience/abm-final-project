@@ -49,7 +49,8 @@ const SeaUrchinEcosystemModel = () => {
     speedMultiplier: 1,  // number of simulation steps per tick
     turboMode: false,  // skip rendering for maximum speed
     tickLimit: 1000,  // simulation stops after this many ticks (0 = unlimited)
-    enableTickLimit: false  // whether to use tick limit
+    enableTickLimit: false,  // whether to use tick limit
+    dataRecordingFrequency: 5  // record data every N ticks
   });
 
   // Sprite styles state
@@ -590,10 +591,13 @@ const SeaUrchinEcosystemModel = () => {
       });
     }
 
-    // Update history even less frequently
-    if (tickRef.current % 10 === 0 && tickRef.current > 0) {
-      const shouldUpdateHistory = !params.turboMode || tickRef.current % 50 === 0;
-      if (shouldUpdateHistory) {
+    // Update history based on recording frequency
+    if (tickRef.current % params.dataRecordingFrequency === 0 && tickRef.current > 0) {
+      // In turbo mode, record less frequently
+      const turboMultiplier = params.turboMode ? 5 : 1;
+      const effectiveFrequency = params.dataRecordingFrequency * turboMultiplier;
+      
+      if (tickRef.current % effectiveFrequency === 0) {
         const juveniles = currentAgents.seaUrchins.filter(u => !u.isAdult).length;
         const adults = currentAgents.seaUrchins.filter(u => u.isAdult).length;
         const totalUrchins = juveniles + adults;
@@ -602,11 +606,17 @@ const SeaUrchinEcosystemModel = () => {
         const coralHealthPercent = totalCorals > 0 ? (healthy / totalCorals) * 100 : 0;
         const avgAlgae = currentAgents.corals.reduce((sum, c) => sum + c.algaeLevel, 0) / currentAgents.corals.length * 100;
 
+        // Determine history limit based on tick limit and recording frequency
+        const expectedPoints = params.enableTickLimit && params.tickLimit > 0 
+          ? Math.ceil(params.tickLimit / effectiveFrequency)
+          : Math.ceil(10000 / effectiveFrequency);
+        const historyLimit = Math.max(200, expectedPoints * 2); // Double as buffer
+
         setHistory(prev => ({
-          ticks: [...prev.ticks, tickRef.current].slice(-100),
-          urchinPop: [...prev.urchinPop, totalUrchins].slice(-100),
-          coralHealth: [...prev.coralHealth, coralHealthPercent].slice(-100),
-          algaeCoverage: [...prev.algaeCoverage, avgAlgae].slice(-100)
+          ticks: [...prev.ticks, tickRef.current].slice(-historyLimit),
+          urchinPop: [...prev.urchinPop, totalUrchins].slice(-historyLimit),
+          coralHealth: [...prev.coralHealth, coralHealthPercent].slice(-historyLimit),
+          algaeCoverage: [...prev.algaeCoverage, avgAlgae].slice(-historyLimit)
         }));
       }
     }
@@ -1052,10 +1062,21 @@ const SeaUrchinEcosystemModel = () => {
 
   // Export data function
   const exportData = () => {
+    const effectiveFrequency = params.dataRecordingFrequency * (params.turboMode ? 5 : 1);
+    const dataFrequency = history.ticks.length > 1 ? history.ticks[1] - history.ticks[0] : effectiveFrequency;
     const data = {
       parameters: params,
       history: history,
       finalStats: stats,
+      dataCollection: {
+        totalDataPoints: history.ticks.length,
+        configuredFrequency: params.dataRecordingFrequency,
+        effectiveFrequency: effectiveFrequency,
+        actualFrequency: dataFrequency,
+        expectedDataPoints: params.enableTickLimit && params.tickLimit > 0 ? Math.floor(params.tickLimit / effectiveFrequency) : 'N/A',
+        simulationDuration: tick,
+        turboModeActive: params.turboMode
+      },
       spriteStyle: spriteStyle,
       customSpriteUploaded: {
         urchin: !!customSprites.urchin,
@@ -1202,6 +1223,8 @@ const SeaUrchinEcosystemModel = () => {
 
   // Export comprehensive report with chart, state, and parameters
   const exportComprehensiveReport = () => {
+    const effectiveFrequency = params.dataRecordingFrequency * (params.turboMode ? 5 : 1);
+    
     // Prepare comprehensive data
     const report = {
       metadata: {
@@ -1258,7 +1281,8 @@ const SeaUrchinEcosystemModel = () => {
           speedMultiplier: params.speedMultiplier,
           turboMode: params.turboMode,
           tickLimit: params.tickLimit,
-          tickLimitEnabled: params.enableTickLimit
+          tickLimitEnabled: params.enableTickLimit,
+          dataRecordingFrequency: params.dataRecordingFrequency
         }
       },
       timeSeries: {
@@ -1272,6 +1296,13 @@ const SeaUrchinEcosystemModel = () => {
         averageCoralHealth: history.coralHealth.length > 0 ? (history.coralHealth.reduce((a, b) => a + b, 0) / history.coralHealth.length).toFixed(2) : 0,
         maxUrchins: Math.max(...history.urchinPop, 0),
         minUrchins: Math.min(...history.urchinPop, Infinity),
+        dataPointCount: history.ticks.length,
+        actualDataFrequency: history.ticks.length > 1 ? (history.ticks[1] - history.ticks[0]) : params.dataRecordingFrequency,
+        configuredFrequency: params.dataRecordingFrequency,
+        effectiveFrequency: effectiveFrequency,
+        turboModeActive: params.turboMode,
+        expectedDataPoints: params.enableTickLimit && params.tickLimit > 0 ? 
+          Math.floor(params.tickLimit / effectiveFrequency) : 'N/A',
         trend: {
           urchins: history.urchinPop.length > 1 ? (history.urchinPop[history.urchinPop.length - 1] > history.urchinPop[0] ? 'increasing' : 'decreasing') : 'stable',
           coralHealth: history.coralHealth.length > 1 ? (history.coralHealth[history.coralHealth.length - 1] > history.coralHealth[0] ? 'improving' : 'degrading') : 'stable'
@@ -1327,6 +1358,7 @@ Simulation Speed:
   • Turbo Mode: ${params.turboMode ? 'Enabled' : 'Disabled'}
   • Effective Speed: ${params.turboMode ? params.speedMultiplier * 10 : params.speedMultiplier}x
   • Tick Limit: ${params.enableTickLimit ? params.tickLimit + ' ticks' : 'Disabled'}
+  • Data Recording: Every ${params.dataRecordingFrequency} ticks
 
 ANALYSIS SUMMARY
 ----------------
@@ -1336,7 +1368,14 @@ ANALYSIS SUMMARY
 • Urchin Trend: ${report.analysis.trend.urchins}
 • Coral Health Trend: ${report.analysis.trend.coralHealth}
 
-DATA POINTS: ${history.ticks.length}
+DATA COLLECTION
+---------------
+• Total Data Points: ${history.ticks.length}
+• Configured Recording: Every ${params.dataRecordingFrequency} ticks
+• Actual Recording: Every ${report.analysis.actualDataFrequency} ticks
+• Turbo Mode Effect: ${params.turboMode ? '5x less frequent recording' : 'None'}
+• Expected Data Points: ${report.analysis.expectedDataPoints}
+• Simulation Duration: ${tick} ticks
 `;
 
     // Create downloadable files
@@ -1427,7 +1466,17 @@ DATA POINTS: ${history.ticks.length}
     csv += `Speed Multiplier,${params.speedMultiplier}\n`;
     csv += `Turbo Mode,${params.turboMode}\n`;
     csv += `Tick Limit Enabled,${params.enableTickLimit}\n`;
-    csv += `Tick Limit,${params.tickLimit}\n\n`;
+    csv += `Tick Limit,${params.tickLimit}\n`;
+    csv += `Data Recording Frequency,${params.dataRecordingFrequency}\n\n`;
+    
+    csv += 'DATA COLLECTION INFO\n';
+    csv += 'Metric,Value\n';
+    csv += `Total Data Points Collected,${history.ticks.length}\n`;
+    csv += `Configured Recording Frequency,Every ${params.dataRecordingFrequency} ticks\n`;
+    csv += `Actual Recording Frequency,Every ${history.ticks.length > 1 ? history.ticks[1] - history.ticks[0] : params.dataRecordingFrequency} ticks\n`;
+    csv += `Turbo Mode Effect,${params.turboMode ? '5x less frequent' : 'None'}\n`;
+    csv += `Expected Data Points,${params.enableTickLimit && params.tickLimit > 0 ? Math.floor(params.tickLimit / (params.dataRecordingFrequency * (params.turboMode ? 5 : 1))) : 'N/A'}\n`;
+    csv += `Simulation Duration,${tick} ticks\n\n`;
     
     csv += 'TIME SERIES DATA\n';
     csv += 'Tick,Urchin Population,Coral Health %,Algae Coverage %\n';
@@ -2039,6 +2088,64 @@ DATA POINTS: ${history.ticks.length}
               </div>
 
               <div className="mt-4 pt-4 border-t border-slate-700/50">
+                <CustomSlider
+                  label="Data Recording Frequency"
+                  value={params.dataRecordingFrequency}
+                  onChange={(e) => setParams({...params, dataRecordingFrequency: parseInt(e.target.value)})}
+                  min={1}
+                  max={50}
+                  step={1}
+                  unit=" ticks"
+                  color="green"
+                />
+                <div className="grid grid-cols-4 gap-1 mt-2">
+                  <button
+                    onClick={() => setParams({...params, dataRecordingFrequency: 1})}
+                    className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                      params.dataRecordingFrequency === 1
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    1
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, dataRecordingFrequency: 5})}
+                    className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                      params.dataRecordingFrequency === 5
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    5
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, dataRecordingFrequency: 10})}
+                    className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                      params.dataRecordingFrequency === 10
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    10
+                  </button>
+                  <button
+                    onClick={() => setParams({...params, dataRecordingFrequency: 25})}
+                    className={`py-1 px-1 rounded text-xs font-medium transition-all ${
+                      params.dataRecordingFrequency === 25
+                        ? 'bg-green-600 text-white'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 text-gray-300'
+                    }`}
+                  >
+                    25
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  {params.turboMode ? 'Turbo mode: Records 5x less frequently' : 'Records data every N ticks'}
+                </p>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
                 <label className="flex items-center justify-between cursor-pointer">
                   <span className="text-sm text-gray-400">Low Performance Mode</span>
                   <input
@@ -2113,6 +2220,12 @@ DATA POINTS: ${history.ticks.length}
                   unit=""
                   color="cyan"
                 />
+                <div className="p-3 bg-slate-900/30 rounded-lg">
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <Info className="w-3 h-3" />
+                    Maturity Time: 54-170 ticks (randomly assigned per urchin)
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -2376,7 +2489,7 @@ DATA POINTS: ${history.ticks.length}
                 <div>
                   <h4 className="font-semibold text-white mb-2">Key Components:</h4>
                   <ul className="list-disc pl-5 space-y-1">
-                    <li><span className="text-cyan-400">Sea Urchins:</span> Graze on corals and algae, reproduce when conditions are favorable</li>
+                    <li><span className="text-cyan-400">Sea Urchins:</span> Graze on corals and algae, reproduce when conditions are favorable. Each urchin has a random maturity time between 54-170 ticks.</li>
                     <li><span className="text-pink-400">Coral Reefs:</span> Provide habitat, can heal when grazing pressure is low</li>
                     <li><span className="text-green-400">Algae:</span> Grows on degraded corals, controlled by urchin grazing</li>
                     <li><span className="text-orange-400">Harvesters:</span> Remove adult urchins from the ecosystem</li>
@@ -2439,6 +2552,24 @@ DATA POINTS: ${history.ticks.length}
                   </ul>
                   <p className="mt-2">
                     Enable the tick limit in Simulation Control and set your desired maximum ticks (100-10,000).
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white mb-2">Data Collection:</h4>
+                  <p>
+                    The simulation records data points for charts and exports based on your settings:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 mt-2">
+                    <li><span className="text-green-400">Data Recording Frequency:</span> Adjustable from 1-50 ticks</li>
+                    <li><span className="text-cyan-400">Default:</span> Records data every 5 ticks</li>
+                    <li><span className="text-yellow-400">Turbo mode:</span> Records 5x less frequently for performance</li>
+                    <li><span className="text-purple-400">More frequent recording:</span> More detailed data but may impact performance</li>
+                  </ul>
+                  <p className="mt-2 text-sm text-gray-400">
+                    Example: A 1000-tick simulation with frequency=5 generates 200 data points.
+                  </p>
+                  <p className="mt-2 text-sm text-yellow-400">
+                    💡 Tip: For detailed analysis, set frequency to 1-5. For long simulations, use 10-25.
                   </p>
                 </div>
                 <div>
