@@ -124,7 +124,7 @@ const SeaUrchinEcosystemModel = () => {
       name: 'Balanced Ecosystem',
       icon: '⚖️',
       params: {
-        initialUrchins: 30,
+        initialUrchins: 20,
         harvesterCount: 3,
         initialCoralCoverage: 40,
         grazingRate: 0.5,
