@@ -23,11 +23,11 @@ const SeaUrchinEcosystemModel = () => {
   // Parameters state
   const [params, setParams] = useState({
     // Sea Urchin parameters
-    initialUrchins: 30,
-    reproductionRate: 0.05,
-    grazingRate: 0.5,
-    urchinSpeed: 0.5,
-    spawnRadius: 50,
+    initialUrchins: 16,
+    reproductionRate: 0.02,
+    grazingRate: 0.4,
+    urchinSpeed: 0.3,
+    spawnRadius: 40,
     
     // Harvester parameters
     harvesterCount: 3,
@@ -36,13 +36,13 @@ const SeaUrchinEcosystemModel = () => {
     harvestRadius: 30,
     
     // Coral parameters
-    initialCoralCoverage: 40,
-    coralHealingRate: 0.02,
-    coralDegradationThreshold: 50,
+    initialCoralCoverage: 23,
+    coralHealingRate: 0.015,
+    coralDegradationThreshold: 30,
     
     // Algae parameters
-    algaeGrowthRate: 0.03,
-    maxAlgaeDensity: 0.8,
+    algaeGrowthRate: 0.025,
+    maxAlgaeDensity: 0.9,
     
     // Simulation parameters
     tickRate: 100,  // milliseconds between ticks
